@@ -7,6 +7,12 @@ const path = require('path');
 const app = express();
 app.use(express.json());
 
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error("Error: STRIPE_SECRET_KEY is not set in the environment variables.");
+  process.exit(1);
+}
+
+// Improved error handling in the API route
 app.get('/get-subscribers', async (req, res) => {
   try {
 	console.log('Fetching Stripe subscribers...');
@@ -57,8 +63,11 @@ app.get('/get-subscribers', async (req, res) => {
 	console.log(`Fetched ${allSubscribers.length} subscribers.`);
 	res.json({ subscribers: allSubscribers });
   } catch (error) {
-	console.error('Error fetching subscribers:', error);
-	res.status(500).json({ error: 'Unable to fetch subscribers' });
+	console.error('Error fetching subscribers:', error.message);
+	res.status(500).json({
+	  error: 'Unable to fetch subscribers. Please try again later.',
+	  details: process.env.NODE_ENV === 'development' ? error.message : undefined
+	});
   }
 });
 
