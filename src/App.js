@@ -1,6 +1,3 @@
-/************************************************************
- * src/App.js
- ************************************************************/
 import React, { useState, useEffect } from "react";
 import Login from "./components/Login";
 import { onAuthStateChanged, getIdToken, signOut } from "firebase/auth";
@@ -8,28 +5,59 @@ import { auth } from "./firebase";
 
 function App() {
   const [user, setUser] = useState(null);
+
+  const [allEvents, setAllEvents] = useState([]);
   const [allSubscribers, setAllSubscribers] = useState([]);
   const [filteredSubscribers, setFilteredSubscribers] = useState([]);
+
   const [selectedProduct, setSelectedProduct] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadingSubs, setLoadingSubs] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
   const [stripeKeyInput, setStripeKeyInput] = useState("");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        fetchEvents(currentUser);
         fetchSubscribers(currentUser);
       } else {
         setUser(null);
+        setAllEvents([]);
+        setAllSubscribers([]);
+        setFilteredSubscribers([]);
       }
     });
     return () => unsubscribe();
   }, []);
 
+  async function fetchEvents(currentUser) {
+    if (!currentUser) return;
+    try {
+      setLoadingEvents(true);
+      const token = await getIdToken(currentUser, false);
+      const response = await fetch("/get-events", {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch events. Status: ${response.status}`);
+      }
+      const data = await response.json();
+      setAllEvents(data.events);
+      setLoadingEvents(false);
+    } catch (error) {
+      console.error("Error fetching events:", error);
+      setLoadingEvents(false);
+    }
+  }
+
   async function fetchSubscribers(currentUser) {
     if (!currentUser) return;
     try {
-      setLoading(true);
+      setLoadingSubs(true);
       const token = await getIdToken(currentUser, false);
       const response = await fetch("/get-subscribers", {
         headers: {
@@ -37,16 +65,15 @@ function App() {
         }
       });
       if (!response.ok) {
-        throw new Error(`Failed to fetch. Status: ${response.status}`);
+        throw new Error(`Failed to fetch subscribers. Status: ${response.status}`);
       }
       const data = await response.json();
-      setLoading(false);
       setAllSubscribers(data.subscribers);
       setFilteredSubscribers(data.subscribers);
-      console.log("Subscribers fetched successfully!");
+      setLoadingSubs(false);
     } catch (error) {
       console.error("Error fetching subscribers:", error);
-      setLoading(false);
+      setLoadingSubs(false);
     }
   }
 
@@ -100,18 +127,17 @@ function App() {
     });
   }
 
-  const uniqueProducts = [...new Set(allSubscribers.map((sub) => sub.product_name))];
-
   if (!user) {
     return <Login onLoginSuccess={(u) => setUser(u)} />;
   }
 
+  // Render
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
+
+      {/* Top bar: logged in as + logout */}
       <div className="flex justify-between items-center mb-4">
-        <div className="text-gray-700">
-          Logged in as: <strong>{user.email}</strong>
-        </div>
+        <div className="text-gray-700">Logged in as: <strong>{user.email}</strong></div>
         <button
           onClick={handleLogout}
           className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
@@ -120,10 +146,39 @@ function App() {
         </button>
       </div>
 
-      <h1 className="text-2xl font-bold text-center mb-4">
-        Current Stripe Subscribers
-      </h1>
+      {/* EVENTS TABLE */}
+      <div className="mb-8">
+        <h2 className="text-xl font-bold mb-2">Events</h2>
+        {loadingEvents && (
+          <div className="text-gray-600 mb-2">Loading events...</div>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-200">
+                <th className="border p-2">Record ID</th>
+                <th className="border p-2">Event ID</th>
+                <th className="border p-2">User ID</th>
+                <th className="border p-2">Start Date</th>
+                <th className="border p-2">Cadence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allEvents.map((evt) => (
+                <tr key={evt.id}>
+                  <td className="border p-2">{evt.id}</td>
+                  <td className="border p-2">{evt.EventID}</td>
+                  <td className="border p-2">{evt.UserID}</td>
+                  <td className="border p-2">{evt.StartDate}</td>
+                  <td className="border p-2">{evt.Cadence}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
+      {/* STRIPE KEY Input */}
       <div className="mb-6 text-center">
         <label className="block mb-2">Enter your Stripe Key:</label>
         <input
@@ -140,6 +195,9 @@ function App() {
         </button>
       </div>
 
+      {/* SUBSCRIBERS TABLE */}
+      <h2 className="text-xl font-bold text-center mb-4">Current Stripe Subscribers</h2>
+
       <div className="mb-4 text-center">
         <select
           value={selectedProduct}
@@ -147,9 +205,9 @@ function App() {
           className="border px-2 py-1 rounded"
         >
           <option value="">All Products</option>
-          {uniqueProducts.map((product) => (
-            <option key={product} value={product}>
-              {product}
+          {[...new Set(allSubscribers.map((sub) => sub.product_name))].map((p) => (
+            <option key={p} value={p}>
+              {p}
             </option>
           ))}
         </select>
@@ -167,7 +225,7 @@ function App() {
         </button>
       </div>
 
-      {loading && (
+      {loadingSubs && (
         <div className="text-center text-gray-600 mb-4">
           Loading subscribers...
         </div>
@@ -215,6 +273,7 @@ function App() {
           </tbody>
         </table>
       </div>
+
     </div>
   );
 }

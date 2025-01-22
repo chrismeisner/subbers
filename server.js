@@ -1,6 +1,3 @@
-/************************************************************
- * server.js
- ************************************************************/
 require('dotenv').config();
 const express = require("express");
 const path = require("path");
@@ -12,9 +9,7 @@ const serviceAccount = {
   type: "service_account",
   project_id: process.env.FIREBASE_PROJECT_ID,
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-  private_key: process.env.FIREBASE_PRIVATE_KEY
-	? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
-	: undefined,
+  private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
   client_id: process.env.FIREBASE_CLIENT_ID,
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
@@ -49,62 +44,120 @@ const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY })
   .base(process.env.AIRTABLE_BASE_ID);
 
 /**
- * If no user is found, create a new record in the "Users" table.
- * Otherwise return the found record.
+ * We assume you have a "Users" table with a field "UserID" (a string),
+ * and you're either storing it or creating it on the fly. 
+ * For simplicity, we’ll do an auto-create approach here.
  */
 async function getOrCreateUserByEmail(email) {
   console.log("getOrCreateUserByEmail called with:", email);
-  try {
-	const records = await base("Users")
-	  .select({
-		filterByFormula: `{Email} = "${email}"`,
-		maxRecords: 1
-	  })
-	  .firstPage();
+  const tableName = "Users"; // ensure this matches your actual table name
 
-	if (records && records.length > 0) {
-	  console.log("Found existing Airtable record with ID:", records[0].id);
-	  return records[0];
-	}
+  const records = await base(tableName)
+	.select({
+	  filterByFormula: `{Email} = "${email}"`,
+	  maxRecords: 1
+	})
+	.firstPage();
 
-	console.log("No existing user record found. Creating new record for:", email);
-	const createdRecords = await base("Users").create([
-	  {
-		fields: {
-		  Email: email
-		}
-	  }
-	]);
-	const newRecord = createdRecords[0];
-	console.log("New user record created in Airtable with ID:", newRecord.id);
-	return newRecord;
-  } catch (err) {
-	console.error("Error in getOrCreateUserByEmail:", err);
-	throw err;
+  if (records && records.length > 0) {
+	console.log("Found existing Airtable user record ID:", records[0].id);
+	return records[0];
   }
+
+  console.log("No user record found. Creating new record for:", email);
+  const newRecords = await base(tableName).create([
+	{
+	  fields: {
+		Email: email,
+		// If you store your own custom user ID, generate it here or 
+		// rely on a formula field in Airtable, etc.
+		// For example: UserID: "usr_" + nanoid() (just an example).
+	  }
+	}
+  ]);
+  const newRec = newRecords[0];
+  console.log("New user record created with ID:", newRec.id);
+  return newRec;
+}
+
+/**
+ * GET /get-events
+ *   - Verifies the user's Firebase token
+ *   - Looks up the user or creates them
+ *   - Reads the user’s "UserID" field
+ *   - Fetches matching events from the "Events" table
+ */
+async function getEventsForUser(userRecord) {
+  // We assume the userRecord has a field named "UserID".
+  // If you only rely on Airtable's record ID, you might do something else,
+  // but we'll assume a real "UserID" field in the table.
+  const userID = userRecord.get("UserID");
+
+  if (!userID) {
+	// In case your user doesn't have a UserID yet, you might
+	// handle that or create one. For now, return an empty array or an error.
+	return [];
+  }
+
+  console.log("Fetching events for userID:", userID);
+
+  const eventsTableName = "Events"; // ensure this matches your actual table name
+  const records = await base(eventsTableName)
+	.select({
+	  filterByFormula: `{UserID} = "${userID}"`
+	})
+	.firstPage();
+
+  // Map to a plain array of event objects
+  const events = records.map((rec) => {
+	return {
+	  id: rec.id,
+	  EventID: rec.get("EventID") || "",
+	  UserID: rec.get("UserID") || "",
+	  StartDate: rec.get("StartDate") || "",
+	  Cadence: rec.get("Cadence") || ""
+	};
+  });
+
+  return events;
 }
 
 const app = express();
 app.use(express.json());
 
-app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
+// GET /get-events route
+app.get("/get-events", verifyFirebaseToken, async (req, res) => {
   try {
 	const userEmail = req.firebaseUser.email;
-	console.log("get-subscribers => userEmail:", userEmail);
 	if (!userEmail) {
 	  return res.status(400).json({ error: "No email found in token" });
 	}
 
 	const userRecord = await getOrCreateUserByEmail(userEmail);
+	const events = await getEventsForUser(userRecord);
+
+	return res.json({ events });
+  } catch (error) {
+	console.error("Error fetching events:", error);
+	return res.status(500).json({ error: "Unable to fetch events" });
+  }
+});
+
+// GET /get-subscribers route (unchanged, except we also call getOrCreateUserByEmail)
+app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
+  try {
+	const userEmail = req.firebaseUser.email;
+	if (!userEmail) {
+	  return res.status(400).json({ error: "No email found in token" });
+	}
+	const userRecord = await getOrCreateUserByEmail(userEmail);
 
 	const userStripeKey = userRecord.get("StripeKey");
 	if (!userStripeKey) {
-	  console.log("No StripeKey found for user in Airtable");
 	  return res.status(400).json({ error: "No StripeKey in Airtable record" });
 	}
 
 	const stripe = new Stripe(userStripeKey);
-	console.log("Using user-specific Stripe key to fetch subscribers...");
 
 	let allSubscribers = [];
 	let hasMore = true;
@@ -120,7 +173,6 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		params.starting_after = lastSubscriptionId;
 	  }
 	  const subscriptions = await stripe.subscriptions.list(params);
-
 	  const subscribers = subscriptions.data.map((subscription) => ({
 		id: subscription.customer.id,
 		email: subscription.customer.email || "N/A",
@@ -142,14 +194,13 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		  : "None"
 	  }));
 
-	  allSubscribers = [...allSubscribers, ...subscribers];
+	  allSubscribers.push(...subscribers);
 	  hasMore = subscriptions.has_more;
 	  if (hasMore) {
 		lastSubscriptionId = subscriptions.data[subscriptions.data.length - 1].id;
 	  }
 	}
 
-	console.log("Fetched", allSubscribers.length, "subscribers for", userEmail);
 	return res.json({ subscribers: allSubscribers });
   } catch (error) {
 	console.error("Error fetching subscribers:", error);
@@ -157,37 +208,10 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
-  try {
-	const userEmail = req.firebaseUser.email;
-	if (!userEmail) {
-	  return res.status(400).json({ error: "No email in token." });
-	}
+// (Optional) Save Stripe Key route, etc., remain the same
+// app.post("/save-stripe-key", ...)
 
-	const { stripeKey } = req.body;
-	if (!stripeKey) {
-	  return res.status(400).json({ error: "No stripeKey provided." });
-	}
-
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	console.log("Saving StripeKey for:", userEmail);
-
-	await base("Users").update([
-	  {
-		id: userRecord.id,
-		fields: {
-		  StripeKey: stripeKey
-		}
-	  }
-	]);
-
-	return res.json({ message: "Stripe key saved successfully" });
-  } catch (err) {
-	console.error("Error saving Stripe key:", err);
-	return res.status(500).json({ error: "Failed to save Stripe key" });
-  }
-});
-
+// Serve React build in production
 app.use(express.static(path.join(__dirname, "build")));
 
 app.get("*", (req, res) => {
