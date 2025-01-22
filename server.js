@@ -21,12 +21,12 @@ const serviceAccount = {
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
   token_uri: "https://oauth2.googleapis.com/token",
   auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
 };
 console.log("Firebase Admin credentials loaded.");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 console.log("Firebase Admin initialized.");
 
@@ -68,45 +68,24 @@ async function verifyFirebaseToken(req, res, next) {
 /************************************************************
  * 4) HELPERS: GET/CREATE USER + FETCH EVENTS
  ************************************************************/
-
-/**
- * Create or return existing user from the "Users" table by email.
- */
 async function getOrCreateUserByEmail(email) {
-  console.log("getOrCreateUserByEmail called with:", email);
-
+  console.log("Fetching or creating user by email:", email);
   const tableName = "Users";
-  console.log(`Looking up user in Airtable table "${tableName}" by email: ${email}`);
 
   const records = await base(tableName)
-	.select({
-	  filterByFormula: `{Email} = "${email}"`,
-	  maxRecords: 1
-	})
+	.select({ filterByFormula: `{Email} = "${email}"`, maxRecords: 1 })
 	.firstPage();
 
-  if (records && records.length > 0) {
-	console.log("Found existing Airtable user record ID:", records[0].id);
+  if (records.length > 0) {
+	console.log("Found existing user:", records[0].id);
 	return records[0];
   }
 
-  console.log("No user record found. Creating new record for:", email);
-  const newRecords = await base(tableName).create([
-	{
-	  fields: {
-		Email: email
-		// If you want to store a custom "UserID" here, you can generate it or rely on a formula in Airtable
-	  }
-	}
-  ]);
-  const newRec = newRecords[0];
-  console.log("New user record created with ID:", newRec.id);
-  return newRec;
+  console.log("Creating new user for email:", email);
+  const newRecord = await base(tableName).create([{ fields: { Email: email } }]);
+  return newRecord[0];
 }
 
-/**
- * Retrieve events for the given user record by matching "UserID".
- */
 async function getEventsForUser(userRecord) {
   const userID = userRecord.get("UserID");
   if (!userID) {
@@ -114,23 +93,19 @@ async function getEventsForUser(userRecord) {
 	return [];
   }
 
-  console.log("Fetching events for userID:", userID);
-  const eventsTableName = "Events";
+  console.log("Fetching events for UserID:", userID);
+  const tableName = "Events";
 
-  const records = await base(eventsTableName)
-	.select({
-	  filterByFormula: `{UserID} = "${userID}"`
-	})
+  const records = await base(tableName)
+	.select({ filterByFormula: `{UserID} = "${userID}"` })
 	.firstPage();
-
-  console.log("Fetched", records.length, "event(s) for userID:", userID);
 
   return records.map((rec) => ({
 	id: rec.id,
 	EventID: rec.get("EventID") || "",
 	UserID: rec.get("UserID") || "",
 	StartDate: rec.get("StartDate") || "",
-	Cadence: rec.get("Cadence") || ""
+	Cadence: rec.get("Cadence") || "",
   }));
 }
 
@@ -149,7 +124,6 @@ app.get("/get-events", verifyFirebaseToken, async (req, res) => {
   try {
 	const userEmail = req.firebaseUser.email;
 	if (!userEmail) {
-	  console.error("No email found in token.");
 	  return res.status(400).json({ error: "No email found in token" });
 	}
 
@@ -157,7 +131,6 @@ app.get("/get-events", verifyFirebaseToken, async (req, res) => {
 	const userRecord = await getOrCreateUserByEmail(userEmail);
 	const events = await getEventsForUser(userRecord);
 
-	console.log("Returning events:", events.length, "record(s).");
 	return res.json({ events });
   } catch (error) {
 	console.error("Error fetching events:", error);
@@ -200,7 +173,7 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	  const params = {
 		status: "active",
 		limit: 100,
-		expand: ["data.customer", "data.discount", "data.plan.product"]
+		expand: ["data.customer", "data.discount", "data.plan.product"],
 	  };
 	  if (lastSubscriptionId) {
 		params.starting_after = lastSubscriptionId;
@@ -225,7 +198,7 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		billing_interval: subscription.plan.interval,
 		discount: subscription.discount
 		  ? `${subscription.discount.coupon.percent_off}% off`
-		  : "None"
+		  : "None",
 	  }));
 
 	  allSubscribers = [...allSubscribers, ...subscribers];
@@ -235,7 +208,6 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	  }
 	}
 
-	console.log(`Fetched ${allSubscribers.length} active subscriber(s) from Stripe.`);
 	return res.json({ subscribers: allSubscribers });
   } catch (error) {
 	console.error("Error fetching subscribers:", error);
@@ -244,9 +216,31 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 });
 
 /**
- * (Optional) POST /save-stripe-key or other endpoints remain here if needed
- * e.g. app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => { ... })
+ * POST /save-stripe-key
+ * - Verifies Firebase token
+ * - Saves the Stripe Key to the user's Airtable record
  */
+app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
+  console.log("POST /save-stripe-key hit.");
+  try {
+	const { stripeKey } = req.body;
+	if (!stripeKey) {
+	  return res.status(400).json({ error: "Missing Stripe Key" });
+	}
+
+	const userEmail = req.firebaseUser.email;
+	const userRecord = await getOrCreateUserByEmail(userEmail);
+
+	await base("Users").update(userRecord.id, {
+	  StripeKey: stripeKey,
+	});
+
+	return res.json({ message: "Stripe Key saved successfully" });
+  } catch (error) {
+	console.error("Error saving Stripe Key:", error);
+	return res.status(500).json({ error: "Unable to save Stripe Key" });
+  }
+});
 
 /************************************************************
  * 6) SERVE REACT BUILD IN PRODUCTION
@@ -255,7 +249,6 @@ if (process.env.NODE_ENV === "production") {
   console.log("Serving static files from build directory...");
   app.use(express.static(path.join(__dirname, "build")));
   app.get("*", (req, res) => {
-	console.log("Serving index.html for:", req.url);
 	res.sendFile(path.join(__dirname, "build", "index.html"));
   });
 }
