@@ -56,11 +56,14 @@ async function verifyFirebaseToken(req, res, next) {
   }
   try {
 	const decoded = await admin.auth().verifyIdToken(token);
-	console.log("Firebase token verified! UID:", decoded.uid, "Email:", decoded.email);
+	console.log("Firebase token verified successfully:", {
+	  uid: decoded.uid,
+	  email: decoded.email,
+	});
 	req.firebaseUser = decoded;
 	next();
   } catch (err) {
-	console.error("Invalid Firebase token:", err);
+	console.error("Error verifying Firebase token:", err);
 	return res.status(401).json({ error: "Unauthorized" });
   }
 }
@@ -69,44 +72,59 @@ async function verifyFirebaseToken(req, res, next) {
  * 4) HELPERS: GET/CREATE USER + FETCH EVENTS
  ************************************************************/
 async function getOrCreateUserByEmail(email) {
-  console.log("Fetching or creating user by email:", email);
+  console.log(`Fetching or creating user by email: ${email}`);
   const tableName = "Users";
 
-  const records = await base(tableName)
-	.select({ filterByFormula: `{Email} = "${email}"`, maxRecords: 1 })
-	.firstPage();
+  try {
+	console.log(`Looking up user in Airtable table "${tableName}" by email...`);
+	const records = await base(tableName)
+	  .select({ filterByFormula: `{Email} = "${email}"`, maxRecords: 1 })
+	  .firstPage();
 
-  if (records.length > 0) {
-	console.log("Found existing user:", records[0].id);
-	return records[0];
+	if (records.length > 0) {
+	  console.log("Found existing user in Airtable:", records[0].id);
+	  return records[0];
+	}
+
+	console.log("No user found. Creating new user in Airtable...");
+	const newRecord = await base(tableName).create([{ fields: { Email: email } }]);
+	console.log("New user created successfully:", newRecord[0].id);
+	return newRecord[0];
+  } catch (error) {
+	console.error("Error interacting with Airtable (Users table):", error);
+	throw new Error("Airtable interaction failed");
   }
-
-  console.log("Creating new user for email:", email);
-  const newRecord = await base(tableName).create([{ fields: { Email: email } }]);
-  return newRecord[0];
 }
 
 async function getEventsForUser(userRecord) {
   const userID = userRecord.get("UserID");
+  console.log(`Fetching events for user with UserID: ${userID}`);
+
   if (!userID) {
 	console.log("No UserID found in user record. Returning empty events array.");
 	return [];
   }
 
-  console.log("Fetching events for UserID:", userID);
   const tableName = "Events";
 
-  const records = await base(tableName)
-	.select({ filterByFormula: `{UserID} = "${userID}"` })
-	.firstPage();
+  try {
+	console.log(`Fetching events from Airtable table "${tableName}"...`);
+	const records = await base(tableName)
+	  .select({ filterByFormula: `{UserID} = "${userID}"` })
+	  .firstPage();
 
-  return records.map((rec) => ({
-	id: rec.id,
-	EventID: rec.get("EventID") || "",
-	UserID: rec.get("UserID") || "",
-	StartDate: rec.get("StartDate") || "",
-	Cadence: rec.get("Cadence") || "",
-  }));
+	console.log(`Fetched ${records.length} events for UserID: ${userID}`);
+	return records.map((rec) => ({
+	  id: rec.id,
+	  EventID: rec.get("EventID") || "",
+	  UserID: rec.get("UserID") || "",
+	  StartDate: rec.get("StartDate") || "",
+	  Cadence: rec.get("Cadence") || "",
+	}));
+  } catch (error) {
+	console.error("Error interacting with Airtable (Events table):", error);
+	throw new Error("Airtable interaction failed");
+  }
 }
 
 /************************************************************
@@ -115,45 +133,33 @@ async function getEventsForUser(userRecord) {
 
 /**
  * GET /get-events
- * - Verifies Firebase token
- * - Looks up (or creates) the user's record in "Users" by email
- * - Retrieves events from "Events" table via "UserID"
  */
 app.get("/get-events", verifyFirebaseToken, async (req, res) => {
   console.log("GET /get-events hit.");
   try {
 	const userEmail = req.firebaseUser.email;
-	if (!userEmail) {
-	  return res.status(400).json({ error: "No email found in token" });
-	}
+	console.log("User email from Firebase token:", userEmail);
 
-	console.log("User email from token:", userEmail);
 	const userRecord = await getOrCreateUserByEmail(userEmail);
 	const events = await getEventsForUser(userRecord);
 
+	console.log(`Returning ${events.length} events.`);
 	return res.json({ events });
   } catch (error) {
-	console.error("Error fetching events:", error);
+	console.error("Error in GET /get-events:", error);
 	return res.status(500).json({ error: "Unable to fetch events" });
   }
 });
 
 /**
  * GET /get-subscribers
- * - Verifies Firebase token
- * - Looks up (or creates) the user's record in "Users"
- * - Reads their "StripeKey" field
- * - Fetches active subscriptions from Stripe
  */
 app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
   console.log("GET /get-subscribers hit.");
   try {
 	const userEmail = req.firebaseUser.email;
-	if (!userEmail) {
-	  return res.status(400).json({ error: "No email found in token" });
-	}
+	console.log("User email from Firebase token:", userEmail);
 
-	console.log("User email from token:", userEmail);
 	const userRecord = await getOrCreateUserByEmail(userEmail);
 
 	const userStripeKey = userRecord.get("StripeKey");
@@ -162,7 +168,7 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	  return res.status(400).json({ error: "No StripeKey in Airtable record" });
 	}
 
-	console.log("Using StripeKey from Airtable to fetch subscribers...");
+	console.log("Using StripeKey to fetch subscribers...");
 	const stripe = new Stripe(userStripeKey);
 
 	let allSubscribers = [];
@@ -170,6 +176,7 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	let lastSubscriptionId = null;
 
 	while (hasMore) {
+	  console.log("Fetching subscribers batch...");
 	  const params = {
 		status: "active",
 		limit: 100,
@@ -208,36 +215,40 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	  }
 	}
 
+	console.log(`Fetched ${allSubscribers.length} subscribers.`);
 	return res.json({ subscribers: allSubscribers });
   } catch (error) {
-	console.error("Error fetching subscribers:", error);
+	console.error("Error in GET /get-subscribers:", error);
 	return res.status(500).json({ error: "Unable to fetch subscribers" });
   }
 });
 
 /**
  * POST /save-stripe-key
- * - Verifies Firebase token
- * - Saves the Stripe Key to the user's Airtable record
  */
 app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
   console.log("POST /save-stripe-key hit.");
   try {
 	const { stripeKey } = req.body;
 	if (!stripeKey) {
+	  console.log("Missing Stripe Key in request body.");
 	  return res.status(400).json({ error: "Missing Stripe Key" });
 	}
 
 	const userEmail = req.firebaseUser.email;
+	console.log("User email from Firebase token:", userEmail);
+
 	const userRecord = await getOrCreateUserByEmail(userEmail);
 
+	console.log("Saving StripeKey to Airtable...");
 	await base("Users").update(userRecord.id, {
 	  StripeKey: stripeKey,
 	});
 
+	console.log("StripeKey saved successfully.");
 	return res.json({ message: "Stripe Key saved successfully" });
   } catch (error) {
-	console.error("Error saving Stripe Key:", error);
+	console.error("Error in POST /save-stripe-key:", error);
 	return res.status(500).json({ error: "Unable to save Stripe Key" });
   }
 });
@@ -249,6 +260,7 @@ if (process.env.NODE_ENV === "production") {
   console.log("Serving static files from build directory...");
   app.use(express.static(path.join(__dirname, "build")));
   app.get("*", (req, res) => {
+	console.log("Serving index.html for:", req.url);
 	res.sendFile(path.join(__dirname, "build", "index.html"));
   });
 }
