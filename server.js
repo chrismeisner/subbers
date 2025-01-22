@@ -1,15 +1,12 @@
-// File: /Users/chrismeisner/Projects/subbers/server.js
+require('dotenv').config();
 
 const express = require('express');
-const stripe = require('stripe')('sk_live_4OQNGbzoGqbQzh77z7Kdo6DQ');
-const cors = require('cors');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const path = require('path');
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-// Fetch Stripe subscribers
 app.get('/get-subscribers', async (req, res) => {
   try {
 	console.log('Fetching Stripe subscribers...');
@@ -21,7 +18,7 @@ app.get('/get-subscribers', async (req, res) => {
 	  const params = {
 		status: 'active',
 		limit: 100,
-		expand: ['data.customer', 'data.discount', 'data.plan.product'],
+		expand: ['data.customer', 'data.discount', 'data.plan.product']
 	  };
 
 	  if (lastSubscriptionId) {
@@ -47,7 +44,7 @@ app.get('/get-subscribers', async (req, res) => {
 		billing_interval: subscription.plan.interval,
 		discount: subscription.discount
 		  ? `${subscription.discount.coupon.percent_off}% off`
-		  : 'None',
+		  : 'None'
 	  }));
 
 	  allSubscribers = [...allSubscribers, ...subscribers];
@@ -65,15 +62,15 @@ app.get('/get-subscribers', async (req, res) => {
   }
 });
 
-// Serve React build (for production). 
-// If you're running the React dev server separately, you can omit this.
+// Serve React build in production
 app.use(express.static(path.join(__dirname, 'build')));
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-// Start server on port 4200
-const PORT = process.env.PORT || 4200;
+// Read port from env
+const PORT = process.env.SERVER_PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });

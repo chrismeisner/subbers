@@ -1,22 +1,25 @@
-// File: /Users/chrismeisner/Projects/subbers/src/App.js
-
 import React, { useState, useEffect } from 'react';
 
 function App() {
-  const [allSubscribers, setAllSubscribers] = useState([]);   // unfiltered data
-  const [filteredSubscribers, setFilteredSubscribers] = useState([]); // filtered data
-  const [selectedProduct, setSelectedProduct] = useState(''); // dropdown filter
+  const [allSubscribers, setAllSubscribers] = useState([]);
+  const [filteredSubscribers, setFilteredSubscribers] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // We do NOT define an API URL variable here since we're using the dev proxy.
+  // If you need to build for production with a different endpoint, 
+  // you can conditionally set that later. For dev, we rely on the proxy.
 
   useEffect(() => {
     fetchSubscribers();
   }, []);
 
-  // Fetch subscribers from the server
   const fetchSubscribers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:4200/get-subscribers');
+      // Relative path fetch: 
+      // "proxy" in package.json redirects this to http://localhost:4200/get-subscribers
+      const response = await fetch('/get-subscribers');
       if (!response.ok) {
         throw new Error(`Failed to fetch. Status: ${response.status}`);
       }
@@ -24,23 +27,20 @@ function App() {
       setLoading(false);
 
       setAllSubscribers(data.subscribers);
-      setFilteredSubscribers(data.subscribers); // initially show all
+      setFilteredSubscribers(data.subscribers);
     } catch (error) {
       console.error('Error fetching subscribers:', error);
       setLoading(false);
     }
   };
 
-  // Handle product filter change
   const handleProductFilterChange = (e) => {
     const product = e.target.value;
     setSelectedProduct(product);
 
     if (product === '') {
-      // "All Products" selected: show all
       setFilteredSubscribers(allSubscribers);
     } else {
-      // Filter by product name
       const filtered = allSubscribers.filter(
         (sub) => sub.product_name === product
       );
@@ -48,23 +48,18 @@ function App() {
     }
   };
 
-  // Copy emails from the currently filtered list
   const copyEmailAddresses = () => {
     const emails = filteredSubscribers.map((sub) => sub.email).join(', ');
-
-    // Create a temporary textarea to copy from
     const tempTextArea = document.createElement('textarea');
     tempTextArea.value = emails;
     document.body.appendChild(tempTextArea);
     tempTextArea.select();
     document.execCommand('copy');
     document.body.removeChild(tempTextArea);
-
     alert('Email addresses copied to clipboard!');
   };
 
-  // Extract unique product names for the dropdown
-  const uniqueProducts = [...new Set(allSubscribers.map((s) => s.product_name))];
+  const uniqueProducts = [...new Set(allSubscribers.map((sub) => sub.product_name))];
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
@@ -72,7 +67,6 @@ function App() {
         Current Stripe Subscribers
       </h1>
 
-      {/* Filter Dropdown */}
       <div className="mb-4 text-center">
         <select
           value={selectedProduct}
@@ -88,7 +82,6 @@ function App() {
         </select>
       </div>
 
-      {/* Record Counter / Copy Button */}
       <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-2">
         <span className="text-gray-700">
           Records retrieved: {filteredSubscribers.length}
@@ -101,12 +94,12 @@ function App() {
         </button>
       </div>
 
-      {/* Loader */}
       {loading && (
-        <div className="text-center text-gray-600 mb-4">Loading subscribers...</div>
+        <div className="text-center text-gray-600 mb-4">
+          Loading subscribers...
+        </div>
       )}
 
-      {/* Subscribers Table */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
