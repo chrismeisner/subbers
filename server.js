@@ -1,3 +1,5 @@
+// File: /Users/chrismeisner/Projects/subbers/server.js
+
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
@@ -178,7 +180,6 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	while (hasMore) {
 	  console.log("Fetching subscribers batch...");
 	  const params = {
-		status: "active",
 		limit: 100,
 		expand: ["data.customer", "data.discount", "data.plan.product"],
 	  };
@@ -186,7 +187,9 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		params.starting_after = lastSubscriptionId;
 	  }
 
+	  // Fetch ALL subscriptions (no status filter)
 	  const subscriptions = await stripe.subscriptions.list(params);
+
 	  const subscribers = subscriptions.data.map((subscription) => ({
 		id: subscription.customer.id,
 		email: subscription.customer.email || "N/A",
