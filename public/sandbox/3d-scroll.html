@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Complex Geometry + Random Colors + Fade-In)</title>
+  <title>3D TorusKnot (Complex Geometry + Random Colors + Fade-In, No Resize)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -29,6 +29,9 @@
   <div class="relative pt-[100vh] text-center text-2xl">
 	<p>Scroll to rotate the TorusKnot!</p>
 	<p class="mt-8">Refresh to see random background & knot colors.</p>
+	<p class="mt-8 text-base text-gray-600">
+	  (Resize handling is disabled, so the knot won’t jump on mobile height changes)
+	</p>
   </div>
 
   <!-- Three.js and GSAP + ScrollTrigger from CDN -->
@@ -75,9 +78,15 @@
 	function init3D() {
 	  scene = new THREE.Scene();
 
-	  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+	  camera = new THREE.PerspectiveCamera(
+		60,
+		window.innerWidth / window.innerHeight, // We'll set it once, and not update
+		0.1,
+		1000
+	  );
 	  camera.position.set(0, 0, 3);
 
+	  // Create the renderer at the initial window size
 	  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 	  renderer.setSize(window.innerWidth, window.innerHeight);
 	  document.getElementById('canvas-container').appendChild(renderer.domElement);
@@ -90,23 +99,11 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // --------------------------------------------------------------------
-	  //    TORUS KNOT GEOMETRY (INCREASED COMPLEXITY HERE)
-	  // --------------------------------------------------------------------
-	  //  radius:        1.0
-	  //  tube:          0.35
-	  //  tubularSegs:   256  (smoothness around the "tube")
-	  //  radialSegs:    64   (smoothness around the "torus ring")
-	  //  p:             3    (how many times the geometry winds around its axis)
-	  //  q:             5    (how many times it winds around a circle in the cross-section)
-	  // Feel free to tweak p, q, tube, segments, etc., to see different complex shapes.
+	  // More complex TorusKnot geometry
+	  // radius=0.5, tube=0.225, tubularSegments=256, radialSegments=64, p=2, q=3
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.225, 256, 64, 2, 3);
 
-	  // --------------------------------------------------------------------
-	  //    MATERIAL
-	  // --------------------------------------------------------------------
-	  // Using a MeshLambertMaterial to ensure the color is visible and bright
-	  // without requiring an environment map (like MeshStandardMaterial might).
+	  // Use MeshLambertMaterial for bright colors
 	  const material = new THREE.MeshLambertMaterial({
 		color: chosenKnotColor
 	  });
@@ -115,7 +112,7 @@
 	  torusKnot = new THREE.Mesh(geometry, material);
 	  scene.add(torusKnot);
 
-	  // Begin rendering
+	  // Start the render loop
 	  animate();
 
 	  // Setup scroll-triggered rotation
@@ -156,14 +153,13 @@
 	}
 
 	// ------------------------------------------------------------------------
-	// 7. HANDLE RESIZE
+	// 7. (REMOVED) HANDLE RESIZE
 	// ------------------------------------------------------------------------
-	function onWindowResize() {
-	  camera.aspect = window.innerWidth / window.innerHeight;
-	  camera.updateProjectionMatrix();
-	  renderer.setSize(window.innerWidth, window.innerHeight);
-	}
-	window.addEventListener('resize', onWindowResize, false);
+	// We no longer update camera or renderer size on window resize.
+	// This ensures the knot won't jump if the mobile browser's height changes.
+	//
+	// If you do want partial resizing (just for width changes),
+	// you could implement a specialized onWindowResize that ignores height.
   </script>
 </body>
 </html>
