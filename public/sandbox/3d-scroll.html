@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Partial Width Resize + Locked Height)</title>
+  <title>3D TorusKnot (Scrolling Refresh Button)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
 	/*
-	  We rely on Tailwind classes plus a small custom fade-in sequence:
+	  We'll rely on Tailwind classes plus a small custom fade-in sequence:
 	  1) body.fade-in => starts with opacity-0.
 	  2) We add .loaded => transitions to opacity-100 over 0.7s.
 	*/
@@ -21,18 +21,29 @@
   </style>
 </head>
 
-<body class="m-0 h-[200vh] relative fade-in" onload="setRandomColorsAndInit()">
-  <!-- Container for the Three.js canvas -->
+<body class="m-0 relative fade-in" onload="setRandomColorsAndInit()">
+
+  <!-- Pinned Three.js background -->
   <div id="canvas-container" class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"></div>
 
-  <!-- Content to create scroll space -->
-  <div class="relative pt-[100vh] text-center text-2xl">
-	<p>Scroll to rotate the TorusKnot!</p>
-	<p class="mt-8">Refresh to see random background & knot colors (height remains locked).</p>
-	<p class="mt-2 text-base text-gray-600">
-	  Rotate your device or change browser width to see partial resize. 
-	  Height won't change, so no vertical jump on mobile UI changes.
-	</p>
+  <!-- 
+	A tall container to allow scrolling (200vh or more).
+	The Refresh button is inside this normal flow container,
+	so it scrolls with the page rather than staying fixed.
+  -->
+  <div class="min-h-[200vh] relative w-full">
+	
+	<!-- Centered Refresh button (not fixed) -->
+	<div class="pt-12 flex justify-center z-10">
+	  <a
+		href="#"
+		onclick="window.location.reload()"
+		class="bg-white bg-opacity-90 px-4 py-2 text-xl font-semibold text-gray-800 rounded shadow hover:text-black"
+	  >
+		Refresh
+	  </a>
+	</div>
+	
   </div>
 
   <!-- Three.js and GSAP + ScrollTrigger from CDN -->
@@ -41,26 +52,18 @@
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/ScrollTrigger.min.js"></script>
 
   <script>
-	// ------------------------------------------------------------------------
-	// 1. HELPER: Generate a random #RRGGBB color string
-	// ------------------------------------------------------------------------
+	// 1. Generate a random #RRGGBB color string
 	function getRandomHexColor() {
 	  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
 	}
 
-	// ------------------------------------------------------------------------
-	// 2. GLOBALS
-	// ------------------------------------------------------------------------
+	// 2. Globals
 	let scene, camera, renderer, torusKnot;
 	let chosenKnotColor;
-	let hasRenderedFirstFrame = false; // For fade-in logic
+	let hasRenderedFirstFrame = false;  // for fade-in logic
+	let originalHeight;                 // locked height at load
 
-	// We'll lock the original height at load
-	let originalHeight;
-
-	// ------------------------------------------------------------------------
-	// 3. SET RANDOM COLORS & INIT (CALLED ON BODY ONLOAD)
-	// ------------------------------------------------------------------------
+	// 3. Called on body onload
 	function setRandomColorsAndInit() {
 	  // Random background color
 	  const randomBGColor = getRandomHexColor();
@@ -72,28 +75,25 @@
 	  console.log("Random BG Color:", randomBGColor);
 	  console.log("Random Knot Color:", chosenKnotColor);
 
-	  // Store the initial height (locking it)
+	  // Lock the initial height
 	  originalHeight = window.innerHeight;
 
-	  // Initialize the 3D scene now that we have our colors
+	  // Initialize 3D
 	  init3D();
 	}
 
-	// ------------------------------------------------------------------------
-	// 4. INIT THREE.JS SCENE
-	// ------------------------------------------------------------------------
+	// 4. Init Three.js scene
 	function init3D() {
 	  scene = new THREE.Scene();
 
 	  camera = new THREE.PerspectiveCamera(
 		60,
-		window.innerWidth / originalHeight, // we'll lock the height
+		window.innerWidth / originalHeight, // lock the height
 		0.1,
 		1000
 	  );
 	  camera.position.set(0, 0, 3);
 
-	  // Create the renderer at the initial window size (width, locked height)
 	  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 	  renderer.setSize(window.innerWidth, originalHeight);
 	  document.getElementById('canvas-container').appendChild(renderer.domElement);
@@ -106,40 +106,32 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // --------------------------------------------------------------------
-	  //    TORUS KNOT GEOMETRY (COMPLEX)
-	  // --------------------------------------------------------------------
-	  //  radius=0.5, tube=0.225, tubularSegments=256, radialSegments=64, p=2, q=3
+	  // More complex TorusKnot geometry
+	  // radius=0.5, tube=0.225, tubularSegments=256, radialSegments=64, p=2, q=3
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.225, 256, 64, 2, 3);
 
-	  // --------------------------------------------------------------------
-	  //    MATERIAL
-	  // --------------------------------------------------------------------
+	  // Use Lambert so random colors look bright
 	  const material = new THREE.MeshLambertMaterial({
 		color: chosenKnotColor
 	  });
 
-	  // Create the mesh
 	  torusKnot = new THREE.Mesh(geometry, material);
 	  scene.add(torusKnot);
 
-	  // Start the render loop
+	  // Start render loop
 	  animate();
 
-	  // Setup scroll-triggered rotation
+	  // Setup scroll-trigger rotation
 	  initScrollTrigger();
 
-	  // Now we can listen for width-only resize
+	  // Listen for width changes only
 	  window.addEventListener('resize', onWindowResize);
 	}
 
-	// ------------------------------------------------------------------------
-	// 5. RENDER LOOP (FADE-IN ON FIRST FRAME)
-	// ------------------------------------------------------------------------
+	// 5. Render loop (fade-in on first frame)
 	function animate() {
 	  requestAnimationFrame(animate);
 
-	  // On the first rendered frame, remove fade-in's initial opacity
 	  if (!hasRenderedFirstFrame) {
 		document.body.classList.add('loaded');
 		hasRenderedFirstFrame = true;
@@ -148,9 +140,7 @@
 	  renderer.render(scene, camera);
 	}
 
-	// ------------------------------------------------------------------------
-	// 6. SCROLLTRIGGER FOR ROTATION
-	// ------------------------------------------------------------------------
+	// 6. ScrollTrigger to rotate the knot
 	function initScrollTrigger() {
 	  gsap.registerPlugin(ScrollTrigger);
 
@@ -166,16 +156,13 @@
 	  });
 	}
 
-	// ------------------------------------------------------------------------
-	// 7. HANDLE RESIZE (width-only)
-	// ------------------------------------------------------------------------
+	// 7. Width-only resize
 	function onWindowResize() {
 	  const newWidth = window.innerWidth;
 
-	  // Keep the renderer's height fixed at originalHeight
+	  // Keep the renderer's height fixed
 	  renderer.setSize(newWidth, originalHeight);
 
-	  // Update the camera's aspect ratio using originalHeight
 	  camera.aspect = newWidth / originalHeight;
 	  camera.updateProjectionMatrix();
 	}
