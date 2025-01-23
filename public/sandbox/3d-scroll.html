@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Responsive Refresh Button)</title>
+  <title>3D TorusKnot (Single Bottom Sticky Refresh Bar)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -18,6 +18,7 @@
 	body.fade-in.loaded {
 	  @apply opacity-100;
 	}
+	/* Smooth background color transition for in-browser "refresh" */
 	body {
 	  transition: background-color 1s ease;
 	}
@@ -25,73 +26,62 @@
 </head>
 
 <body class="m-0 relative fade-in" onload="initPage()">
-  <!-- Pinned 3D background -->
-  <div id="canvas-container" class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"></div>
+  <!-- 3D pinned background (z-10 behind everything) -->
+  <div
+	id="canvas-container"
+	class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"
+  ></div>
 
   <!-- 
-	Main content container, very tall (10x viewport).
-	The user scrolls a lot to see the entire page.
+	Main content container: very tall (10x viewport = 1000vh)
+	So user can scroll from top to bottom, rotating the TorusKnot.
+	ADDED px-4 FOR MOBILE, REMOVED ON md+ (md:px-0)
   -->
-  <div class="min-h-[1000vh] flex flex-col items-center justify-end">
+  <div class="min-h-[1000vh] flex flex-col items-center justify-end px-4 md:px-0">
 	<p class="text-xs mb-8 text-center text-gray-800 font-medium">
 	  Have a nice day
 	</p>
   </div>
 
   <!-- 
-	REFRESH BUTTON: 
-	Default (mobile) => pinned to bottom (sticky bottom-0). 
-	On md (>=768px) => pinned to top (sticky top-0, bottom-auto).
-	Also uses different sizes for mobile vs. desktop.
+	BOTTOM STICKY BAR (shown on all devices):
+	- "sticky bottom-0" pins it at the bottom
+	- Always visible
   -->
-  <footer
+  <div
 	class="
-	  sticky 
-	  bottom-0 
-	  bg-white/90 
-	  backdrop-blur-sm 
-	  z-50 
-	  w-full 
-	  text-center 
-	  py-3 
+	  sticky
+	  bottom-0
+	  left-0
+	  w-full
+	  bg-white/90
+	  backdrop-blur-sm
+	  z-50
+	  text-center
+	  py-3
 	  shadow
-	  md:sticky
-	  md:top-0
-	  md:bottom-auto
-	  md:py-2
 	"
   >
-	<button 
-	  onclick="inBrowserRefresh()" 
-	  class="
-		text-sm 
-		font-semibold 
-		text-gray-800 
-		px-5 
-		py-2 
-		rounded 
-		hover:text-black
-		md:text-xs
-		md:px-4
-		md:py-1
-	  "
+	<button
+	  onclick="inBrowserRefresh()"
+	  class="text-sm font-semibold text-gray-800 px-5 py-2 rounded hover:text-black"
 	>
 	  Refresh
 	</button>
-  </footer>
+  </div>
 
-  <!-- Three.js and GSAP + ScrollTrigger from CDN -->
+  <!-- Three.js + GSAP + ScrollTrigger from CDNs -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/ScrollTrigger.min.js"></script>
 
   <script>
-	// 1. Random #RRGGBB generator
+	// 1. Generate a random #RRGGBB
 	function getRandomHexColor() {
 	  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
 	}
 
-	// Convert #RRGGBB to normalized {r, g, b} in [0,1]
+	// Convert #RRGGBB to normalized {r, g, b} in [0..1] for Three.js
 	function hexToNormalizedRGB(hex) {
 	  const c = new THREE.Color(hex);
 	  return { r: c.r, g: c.g, b: c.b };
@@ -102,9 +92,9 @@
 	let originalHeight;
 	let hasRenderedFirstFrame = false;
 
-	// 3. Page load
+	// 3. Called on body onload
 	function initPage() {
-	  // Lock initial height
+	  // Lock initial height to avoid mobile "jump"
 	  originalHeight = window.innerHeight;
 
 	  // Initial random colors
@@ -114,22 +104,27 @@
 	  // Apply background color
 	  document.body.style.backgroundColor = bgColor;
 
-	  // Initialize Three.js
+	  // Init Three.js with chosen knot color
 	  init3D(knotColor);
 	}
 
-	// 4. Init Three.js
+	// 4. Initialize Three.js Scene
 	function init3D(knotColor) {
 	  scene = new THREE.Scene();
 
-	  camera = new THREE.PerspectiveCamera(60, window.innerWidth / originalHeight, 0.1, 1000);
+	  camera = new THREE.PerspectiveCamera(
+		60,
+		window.innerWidth / originalHeight, // locked height ratio
+		0.1,
+		1000
+	  );
 	  camera.position.set(0, 0, 3);
 
 	  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 	  renderer.setSize(window.innerWidth, originalHeight);
 	  document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-	  // Lighting
+	  // Basic lighting
 	  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
 	  scene.add(ambientLight);
 
@@ -137,10 +132,10 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // TorusKnot geometry
-	  // radius=0.5, tube=0.225, segments=256, radialSegments=64, p=2, q=3
+	  // TorusKnot geometry: radius=0.5, tube=0.225, seg=256, radSeg=64, p=2, q=3
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.225, 256, 64, 2, 3);
 
+	  // Lambert for bright color
 	  const material = new THREE.MeshLambertMaterial({
 		color: knotColor
 	  });
@@ -148,13 +143,17 @@
 	  torusKnot = new THREE.Mesh(geometry, material);
 	  scene.add(torusKnot);
 
-	  // Start loop
+	  // Start render loop
 	  animate();
+
+	  // Scroll-based rotation
 	  initScrollTrigger();
+
+	  // Listen for width changes only
 	  window.addEventListener('resize', onWindowResize);
 	}
 
-	// 5. Animate / fade-in on first frame
+	// 5. Animation loop (fade-in on first frame)
 	function animate() {
 	  requestAnimationFrame(animate);
 
@@ -166,11 +165,10 @@
 	  renderer.render(scene, camera);
 	}
 
-	// 6. ScrollTrigger rotation
+	// 6. ScrollTrigger for rotating the knot as user scrolls
 	function initScrollTrigger() {
 	  gsap.registerPlugin(ScrollTrigger);
 
-	  // Full rotation from top to bottom
 	  gsap.to(torusKnot.rotation, {
 		x: 2 * Math.PI,
 		y: 2 * Math.PI,
@@ -183,7 +181,7 @@
 	  });
 	}
 
-	// 7. Width-only resize
+	// 7. Width-only resize (no vertical resize to avoid "jump" on mobile)
 	function onWindowResize() {
 	  const newWidth = window.innerWidth;
 	  renderer.setSize(newWidth, originalHeight);
@@ -191,15 +189,16 @@
 	  camera.updateProjectionMatrix();
 	}
 
-	// 8. In-Browser Refresh with smooth fade
+	// 8. In-Browser "Refresh" => smoothly change colors
 	function inBrowserRefresh() {
-	  // new BG color
+	  // a) New background color
 	  const newBGColor = getRandomHexColor();
 	  document.body.style.backgroundColor = newBGColor;
 
-	  // new Knot color
+	  // b) New knot color
 	  const newKnotColor = getRandomHexColor();
 
+	  // Smoothly tween the knot color via GSAP
 	  if (torusKnot) {
 		const oldRGB = {
 		  r: torusKnot.material.color.r,
@@ -208,7 +207,6 @@
 		};
 		const targetRGB = hexToNormalizedRGB(newKnotColor);
 
-		// GSAP tween for knot color
 		gsap.to(oldRGB, {
 		  duration: 1,
 		  r: targetRGB.r,
