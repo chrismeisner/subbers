@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D TorusKnot (Complex Geometry + Random Colors + Fade-In)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+	/*
+	  We'll rely on Tailwind classes plus a small custom fade-in sequence:
+	  1) body.fade-in => starts with opacity-0.
+	  2) We add .loaded => transitions to opacity-100 over 0.7s.
+	*/
+	body.fade-in {
+	  @apply opacity-0 transition-opacity duration-700 ease-in-out;
+	}
+	body.fade-in.loaded {
+	  @apply opacity-100;
+	}
+  </style>
+</head>
+
+<body class="m-0 h-[200vh] relative fade-in" onload="setRandomColorsAndInit()">
+  <!-- Container for the Three.js canvas -->
+  <div id="canvas-container" class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"></div>
+
+  <!-- Content to create scroll space -->
+  <div class="relative pt-[100vh] text-center text-2xl">
+	<p>Scroll to rotate the TorusKnot!</p>
+	<p class="mt-8">Refresh to see random background & knot colors.</p>
+  </div>
+
+  <!-- Three.js and GSAP + ScrollTrigger from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/ScrollTrigger.min.js"></script>
+
+  <script>
+	// ------------------------------------------------------------------------
+	// 1. HELPER: Generate a random #RRGGBB color string
+	// ------------------------------------------------------------------------
+	function getRandomHexColor() {
+	  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+	}
+
+	// ------------------------------------------------------------------------
+	// 2. GLOBALS
+	// ------------------------------------------------------------------------
+	let scene, camera, renderer, torusKnot;
+	let chosenKnotColor;
+	let hasRenderedFirstFrame = false; // For fade-in logic
+
+	// ------------------------------------------------------------------------
+	// 3. SET RANDOM COLORS & INIT (CALLED ON BODY ONLOAD)
+	// ------------------------------------------------------------------------
+	function setRandomColorsAndInit() {
+	  // Random background color
+	  const randomBGColor = getRandomHexColor();
+	  document.body.style.backgroundColor = randomBGColor;
+
+	  // Random knot color
+	  chosenKnotColor = getRandomHexColor();
+
+	  console.log("Random BG Color:", randomBGColor);
+	  console.log("Random Knot Color:", chosenKnotColor);
+
+	  // Initialize the 3D scene now that we have our colors
+	  init3D();
+	}
+
+	// ------------------------------------------------------------------------
+	// 4. INIT THREE.JS SCENE
+	// ------------------------------------------------------------------------
+	function init3D() {
+	  scene = new THREE.Scene();
+
+	  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+	  camera.position.set(0, 0, 3);
+
+	  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+	  renderer.setSize(window.innerWidth, window.innerHeight);
+	  document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+	  // Basic lighting
+	  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+	  scene.add(ambientLight);
+
+	  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+	  directionalLight.position.set(5, 5, 5);
+	  scene.add(directionalLight);
+
+	  // --------------------------------------------------------------------
+	  //    TORUS KNOT GEOMETRY (INCREASED COMPLEXITY HERE)
+	  // --------------------------------------------------------------------
+	  //  radius:        1.0
+	  //  tube:          0.35
+	  //  tubularSegs:   256  (smoothness around the "tube")
+	  //  radialSegs:    64   (smoothness around the "torus ring")
+	  //  p:             3    (how many times the geometry winds around its axis)
+	  //  q:             5    (how many times it winds around a circle in the cross-section)
+	  // Feel free to tweak p, q, tube, segments, etc., to see different complex shapes.
+	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.225, 256, 64, 2, 3);
+
+	  // --------------------------------------------------------------------
+	  //    MATERIAL
+	  // --------------------------------------------------------------------
+	  // Using a MeshLambertMaterial to ensure the color is visible and bright
+	  // without requiring an environment map (like MeshStandardMaterial might).
+	  const material = new THREE.MeshLambertMaterial({
+		color: chosenKnotColor
+	  });
+
+	  // Create the mesh
+	  torusKnot = new THREE.Mesh(geometry, material);
+	  scene.add(torusKnot);
+
+	  // Begin rendering
+	  animate();
+
+	  // Setup scroll-triggered rotation
+	  initScrollTrigger();
+	}
+
+	// ------------------------------------------------------------------------
+	// 5. RENDER LOOP (FADE-IN ON FIRST FRAME)
+	// ------------------------------------------------------------------------
+	function animate() {
+	  requestAnimationFrame(animate);
+
+	  // On the first rendered frame, remove fade-in's initial opacity
+	  if (!hasRenderedFirstFrame) {
+		document.body.classList.add('loaded');
+		hasRenderedFirstFrame = true;
+	  }
+
+	  renderer.render(scene, camera);
+	}
+
+	// ------------------------------------------------------------------------
+	// 6. SCROLLTRIGGER FOR ROTATION
+	// ------------------------------------------------------------------------
+	function initScrollTrigger() {
+	  gsap.registerPlugin(ScrollTrigger);
+
+	  gsap.to(torusKnot.rotation, {
+		x: 2 * Math.PI,
+		y: 2 * Math.PI,
+		scrollTrigger: {
+		  trigger: document.body,
+		  start: 'top top',
+		  end: 'bottom top',
+		  scrub: 1
+		}
+	  });
+	}
+
+	// ------------------------------------------------------------------------
+	// 7. HANDLE RESIZE
+	// ------------------------------------------------------------------------
+	function onWindowResize() {
+	  camera.aspect = window.innerWidth / window.innerHeight;
+	  camera.updateProjectionMatrix();
+	  renderer.setSize(window.innerWidth, window.innerHeight);
+	}
+	window.addEventListener('resize', onWindowResize, false);
+  </script>
+</body>
+</html>

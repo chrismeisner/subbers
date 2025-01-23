@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recurring Event Creator Prototype with Summary</title>
+  <!-- Official Tailwind CSS CDN script -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+  <div class="container mx-auto p-6">
+	<h1 class="text-2xl font-bold mb-4">Recurring Event Creator</h1>
+
+	<!-- FORM -->
+	<form id="eventForm" class="space-y-4 bg-white p-4 rounded shadow-md">
+	  <!-- Event Name -->
+	  <div>
+		<label for="eventName" class="block font-medium mb-1">Event Name</label>
+		<input
+		  type="text"
+		  id="eventName"
+		  name="eventName"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  placeholder="e.g. Yoga Class"
+		  required
+		/>
+	  </div>
+
+	  <!-- Start Date -->
+	  <div>
+		<label for="startDate" class="block font-medium mb-1">Start Date</label>
+		<input
+		  type="date"
+		  id="startDate"
+		  name="startDate"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  required
+		/>
+	  </div>
+
+	  <!-- Start Time -->
+	  <div>
+		<label for="startTime" class="block font-medium mb-1">Start Time</label>
+		<input
+		  type="time"
+		  id="startTime"
+		  name="startTime"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  required
+		/>
+	  </div>
+
+	  <!-- Frequency -->
+	  <div>
+		<label for="frequency" class="block font-medium mb-1">Frequency</label>
+		<select
+		  id="frequency"
+		  name="frequency"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  required
+		>
+		  <option value="daily">Daily</option>
+		  <option value="weekly">Weekly</option>
+		  <option value="monthly">Monthly</option>
+		</select>
+	  </div>
+
+	  <!-- Weekly Details (Which day(s)?) -->
+	  <!-- This will be shown/hidden by JS depending on the chosen frequency -->
+	  <div id="weeklyOptions" class="space-y-2 hidden">
+		<label class="block font-medium">Which day(s) of the week?</label>
+		<div class="flex flex-wrap gap-2">
+		  <!-- Simple checkboxes for days of week -->
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="0"
+			  class="form-checkbox"
+			>
+			<span>Sunday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="1"
+			  class="form-checkbox"
+			>
+			<span>Monday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="2"
+			  class="form-checkbox"
+			>
+			<span>Tuesday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="3"
+			  class="form-checkbox"
+			>
+			<span>Wednesday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="4"
+			  class="form-checkbox"
+			>
+			<span>Thursday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="5"
+			  class="form-checkbox"
+			>
+			<span>Friday</span>
+		  </label>
+		  <label class="inline-flex items-center space-x-2">
+			<input
+			  type="checkbox"
+			  name="daysOfWeek"
+			  value="6"
+			  class="form-checkbox"
+			>
+			<span>Saturday</span>
+		  </label>
+		</div>
+	  </div>
+
+	  <!-- Monthly Details (Which day of the month?) -->
+	  <div id="monthlyOptions" class="space-y-2 hidden">
+		<label for="dayOfMonth" class="block font-medium mb-1">
+		  Day of the Month
+		</label>
+		<input
+		  type="number"
+		  id="dayOfMonth"
+		  name="dayOfMonth"
+		  min="1"
+		  max="31"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  placeholder="e.g., 1 for 1st, 15 for 15th, etc."
+		/>
+	  </div>
+
+	  <!-- Number of Occurrences to Generate -->
+	  <div>
+		<label for="occurrences" class="block font-medium mb-1">Number of Occurrences</label>
+		<input
+		  type="number"
+		  id="occurrences"
+		  name="occurrences"
+		  class="w-full px-3 py-2 border border-gray-300 rounded"
+		  value="5"
+		  min="1"
+		  required
+		/>
+	  </div>
+
+	  <!-- DYNAMIC SUMMARY -->
+	  <div>
+		<p class="font-semibold">Summary:</p>
+		<div
+		  id="summary"
+		  class="text-gray-800 italic"
+		></div>
+	  </div>
+
+	  <!-- Submit Button -->
+	  <button
+		type="submit"
+		class="px-4 py-2 bg-blue-600 text-white font-medium rounded shadow hover:bg-blue-700"
+	  >
+		Generate
+	  </button>
+	</form>
+
+	<!-- RESULTS -->
+	<div id="results" class="mt-6 bg-white p-4 rounded shadow-md">
+	  <h2 class="text-lg font-semibold mb-2">Upcoming Events</h2>
+	  <ul id="eventList" class="list-disc list-inside space-y-1"></ul>
+	</div>
+  </div>
+
+  <script>
+	// When the page loads, set tomorrow's date and default time of 4:20pm
+	window.addEventListener('DOMContentLoaded', () => {
+	  const dateInput = document.getElementById('startDate');
+	  const timeInput = document.getElementById('startTime');
+
+	  // Calculate tomorrow's date
+	  const tomorrow = new Date();
+	  tomorrow.setDate(tomorrow.getDate() + 1);
+
+	  const year = tomorrow.getFullYear();
+	  const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+	  const day = String(tomorrow.getDate()).padStart(2, '0');
+
+	  // Set the date input to tomorrow
+	  dateInput.value = `${year}-${month}-${day}`;
+
+	  // Set time to 16:20 (4:20 PM)
+	  timeInput.value = '16:20';
+	});
+
+	// Get references to form elements
+	const eventForm = document.getElementById('eventForm');
+	const frequencySelect = document.getElementById('frequency');
+	const weeklyOptions = document.getElementById('weeklyOptions');
+	const monthlyOptions = document.getElementById('monthlyOptions');
+	const eventList = document.getElementById('eventList');
+	const dayOfMonthInput = document.getElementById('dayOfMonth');
+	const startTimeInput = document.getElementById('startTime');
+	const summaryDiv = document.getElementById('summary');
+
+	// Array to map numeric day to text
+	const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+	// Show/hide additional options based on frequency AND update summary
+	frequencySelect.addEventListener('change', () => {
+	  const freq = frequencySelect.value;
+	  // Hide both first
+	  weeklyOptions.classList.add('hidden');
+	  monthlyOptions.classList.add('hidden');
+
+	  // Show the correct one
+	  if (freq === 'weekly') {
+		weeklyOptions.classList.remove('hidden');
+	  } else if (freq === 'monthly') {
+		monthlyOptions.classList.remove('hidden');
+	  }
+
+	  // Also update summary text
+	  updateSummary();
+	});
+
+	// Watch for changes to inputs that affect summary
+	startTimeInput.addEventListener('input', updateSummary);
+	dayOfMonthInput.addEventListener('input', updateSummary);
+	document.querySelectorAll('input[name="daysOfWeek"]').forEach(checkbox => {
+	  checkbox.addEventListener('change', updateSummary);
+	});
+
+	/**
+	 * Convert "HH:MM" to a user-friendly string like "7:30 AM" or "4:20 PM"
+	 */
+	function formatTimeString(timeString) {
+	  if (!timeString) return '';
+	  const [hourStr, minuteStr] = timeString.split(':');
+	  let hour = parseInt(hourStr, 10);
+	  const minute = parseInt(minuteStr, 10);
+
+	  const isPM = hour >= 12;
+	  if (hour === 0) {
+		hour = 12; // midnight is 12 AM
+	  } else if (hour > 12) {
+		hour -= 12;
+	  }
+
+	  const minuteFormatted = minute.toString().padStart(2, '0');
+	  const ampm = isPM ? 'PM' : 'AM';
+	  return `${hour}:${minuteFormatted} ${ampm}`;
+	}
+
+	/**
+	 * Update the "summary" text to reflect the current selections
+	 */
+	function updateSummary() {
+	  const freq = frequencySelect.value;
+	  const timeStr = formatTimeString(startTimeInput.value);
+	  let summary = '';
+
+	  if (freq === 'daily') {
+		summary = `Every day at ${timeStr}`;
+	  } else if (freq === 'weekly') {
+		// Gather selected days
+		const selectedDays = [...document.querySelectorAll('input[name="daysOfWeek"]:checked')]
+		  .map(box => parseInt(box.value, 10));
+		if (selectedDays.length > 0) {
+		  // Map day numbers to their names
+		  const dayNamesList = selectedDays.map(d => dayNames[d]);
+		  summary = `Every ${dayNamesList.join(', ')} at ${timeStr}`;
+		} else {
+		  summary = `Every (no weekday selected) at ${timeStr}`;
+		}
+	  } else if (freq === 'monthly') {
+		const dOM = dayOfMonthInput.value.trim();
+		if (dOM) {
+		  summary = `Every month on day ${dOM} at ${timeStr}`;
+		} else {
+		  summary = `Every month (no specific day) at ${timeStr}`;
+		}
+	  }
+
+	  summaryDiv.textContent = summary;
+	}
+
+	// Also update summary on initial load so it doesn't start blank
+	window.addEventListener('DOMContentLoaded', updateSummary);
+
+	// Helper function: Add days to a date
+	function addDays(date, days) {
+	  const result = new Date(date);
+	  result.setDate(result.getDate() + days);
+	  return result;
+	}
+
+	// Helper function: Format date/time for the results
+	function formatDateTime(date) {
+	  const options = {
+		weekday: 'short',
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		hour12: true
+	  };
+	  return date.toLocaleString('en-US', options);
+	}
+
+	// Generate occurrences based on frequency
+	eventForm.addEventListener('submit', (e) => {
+	  e.preventDefault();
+
+	  // Clear previous results
+	  eventList.innerHTML = '';
+
+	  // Get form values
+	  const eventName = document.getElementById('eventName').value;
+	  const startDate = document.getElementById('startDate').value;
+	  const startTime = document.getElementById('startTime').value;
+	  const frequency = frequencySelect.value;
+	  const occurrencesCount = parseInt(document.getElementById('occurrences').value, 10);
+
+	  // Construct initial date from startDate + startTime
+	  let [year, month, day] = startDate.split('-').map(Number);
+	  let [hour, minute] = startTime.split(':').map(Number);
+	  // Note: month is 0-based in JS Date, so subtract 1
+	  const initialDate = new Date(year, month - 1, day, hour, minute);
+
+	  let events = [];
+
+	  if (frequency === 'daily') {
+		let currentDate = new Date(initialDate);
+		for (let i = 0; i < occurrencesCount; i++) {
+		  events.push(new Date(currentDate));
+		  currentDate = addDays(currentDate, 1);
+		}
+	  } else if (frequency === 'weekly') {
+		const selectedDays = [...document.querySelectorAll('input[name="daysOfWeek"]:checked')]
+		  .map(box => parseInt(box.value, 10));
+
+		// If none selected, default to the day of the initial date
+		if (selectedDays.length === 0) {
+		  selectedDays.push(initialDate.getDay());
+		}
+
+		let count = 0;
+		let currentDate = new Date(initialDate);
+
+		while (count < occurrencesCount) {
+		  if (selectedDays.includes(currentDate.getDay())) {
+			events.push(new Date(currentDate));
+			count++;
+		  }
+		  currentDate = addDays(currentDate, 1);
+		}
+	  } else if (frequency === 'monthly') {
+		let selectedDayOfMonth = parseInt(dayOfMonthInput.value.trim(), 10);
+
+		// If not specified, default to the day in the start date
+		if (!selectedDayOfMonth || selectedDayOfMonth < 1 || selectedDayOfMonth > 31) {
+		  selectedDayOfMonth = initialDate.getDate();
+		}
+
+		let currentDate = new Date(initialDate);
+		for (let i = 0; i < occurrencesCount; i++) {
+		  currentDate.setDate(selectedDayOfMonth);
+		  events.push(new Date(currentDate));
+		  currentDate.setMonth(currentDate.getMonth() + 1);
+		}
+	  }
+
+	  // Display results
+	  events.forEach(dateObj => {
+		const li = document.createElement('li');
+		li.textContent = `${eventName} - ${formatDateTime(dateObj)}`;
+		eventList.appendChild(li);
+	  });
+	});
+  </script>
+</body>
+</html>
