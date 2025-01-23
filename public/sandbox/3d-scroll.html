@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Scrolling Refresh Button)</title>
+  <title>3D TorusKnot (In-Browser “Refresh”)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
 	/*
-	  We'll rely on Tailwind classes plus a small custom fade-in sequence:
+	  FADE-IN SEQUENCE:
 	  1) body.fade-in => starts with opacity-0.
-	  2) We add .loaded => transitions to opacity-100 over 0.7s.
+	  2) Adding .loaded => transitions to opacity-100 over ~0.7s.
 	*/
 	body.fade-in {
 	  @apply opacity-0 transition-opacity duration-700 ease-in-out;
@@ -21,29 +21,26 @@
   </style>
 </head>
 
-<body class="m-0 relative fade-in" onload="setRandomColorsAndInit()">
-
-  <!-- Pinned Three.js background -->
+<body class="m-0 relative fade-in" onload="initPage()">
+  <!-- Pinned 3D background -->
   <div id="canvas-container" class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"></div>
 
-  <!-- 
-	A tall container to allow scrolling (200vh or more).
-	The Refresh button is inside this normal flow container,
-	so it scrolls with the page rather than staying fixed.
-  -->
-  <div class="min-h-[200vh] relative w-full">
-	
-	<!-- Centered Refresh button (not fixed) -->
-	<div class="pt-12 flex justify-center z-10">
-	  <a
-		href="#"
-		onclick="window.location.reload()"
-		class="bg-white bg-opacity-90 px-4 py-2 text-xl font-semibold text-gray-800 rounded shadow hover:text-black"
-	  >
-		Refresh
-	  </a>
-	</div>
-	
+  <!-- Sticky header with "Refresh" button that changes colors in-browser -->
+  <header class="sticky top-0 bg-white/90 backdrop-blur-sm z-50 w-full text-center py-2 shadow">
+	<button 
+	  onclick="inBrowserRefresh()" 
+	  class="text-xs font-semibold text-gray-800 px-4 py-2 rounded hover:text-black"
+	>
+	  Refresh
+	</button>
+  </header>
+
+  <!-- Tall container to allow scrolling and reveal bottom message -->
+  <div class="min-h-[200vh] flex flex-col items-center justify-end">
+	<!-- Bottom message -->
+	<p class="text-xs mb-8 text-center text-gray-800 font-medium">
+	  Have a nice day
+	</p>
   </div>
 
   <!-- Three.js and GSAP + ScrollTrigger from CDN -->
@@ -52,43 +49,47 @@
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/ScrollTrigger.min.js"></script>
 
   <script>
-	// 1. Generate a random #RRGGBB color string
+	// ------------------------------------------------------------------------
+	// 1. Random Color Generator
+	// ------------------------------------------------------------------------
 	function getRandomHexColor() {
 	  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
 	}
 
+	// ------------------------------------------------------------------------
 	// 2. Globals
+	// ------------------------------------------------------------------------
 	let scene, camera, renderer, torusKnot;
-	let chosenKnotColor;
-	let hasRenderedFirstFrame = false;  // for fade-in logic
-	let originalHeight;                 // locked height at load
+	let originalHeight;            // locked height
+	let hasRenderedFirstFrame = false;
 
-	// 3. Called on body onload
-	function setRandomColorsAndInit() {
-	  // Random background color
-	  const randomBGColor = getRandomHexColor();
-	  document.body.style.backgroundColor = randomBGColor;
-
-	  // Random knot color
-	  chosenKnotColor = getRandomHexColor();
-
-	  console.log("Random BG Color:", randomBGColor);
-	  console.log("Random Knot Color:", chosenKnotColor);
-
-	  // Lock the initial height
+	// ------------------------------------------------------------------------
+	// 3. Page Initialization (onload)
+	// ------------------------------------------------------------------------
+	function initPage() {
+	  // Lock the initial height so mobile doesn’t “jump”
 	  originalHeight = window.innerHeight;
 
-	  // Initialize 3D
-	  init3D();
+	  // Generate initial random colors
+	  const bgColor = getRandomHexColor();
+	  const knotColor = getRandomHexColor();
+
+	  // Apply background color
+	  document.body.style.backgroundColor = bgColor;
+
+	  // Init Three.js
+	  init3D(knotColor);
 	}
 
-	// 4. Init Three.js scene
-	function init3D() {
+	// ------------------------------------------------------------------------
+	// 4. Initialize Three.js Scene
+	// ------------------------------------------------------------------------
+	function init3D(knotColor) {
 	  scene = new THREE.Scene();
 
 	  camera = new THREE.PerspectiveCamera(
 		60,
-		window.innerWidth / originalHeight, // lock the height
+		window.innerWidth / originalHeight, // Lock height
 		0.1,
 		1000
 	  );
@@ -106,29 +107,30 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // More complex TorusKnot geometry
-	  // radius=0.5, tube=0.225, tubularSegments=256, radialSegments=64, p=2, q=3
+	  // TorusKnot geometry
+	  // radius=0.5, tube=0.225, segments=256, radialSegments=64, p=2, q=3
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.225, 256, 64, 2, 3);
-
-	  // Use Lambert so random colors look bright
+	  // Use Lambert for bright color
 	  const material = new THREE.MeshLambertMaterial({
-		color: chosenKnotColor
+		color: knotColor
 	  });
 
 	  torusKnot = new THREE.Mesh(geometry, material);
 	  scene.add(torusKnot);
 
-	  // Start render loop
+	  // Start the render loop
 	  animate();
 
-	  // Setup scroll-trigger rotation
+	  // Set up scroll-based rotation
 	  initScrollTrigger();
 
 	  // Listen for width changes only
 	  window.addEventListener('resize', onWindowResize);
 	}
 
-	// 5. Render loop (fade-in on first frame)
+	// ------------------------------------------------------------------------
+	// 5. Render Loop (fade-in on first frame)
+	// ------------------------------------------------------------------------
 	function animate() {
 	  requestAnimationFrame(animate);
 
@@ -140,7 +142,9 @@
 	  renderer.render(scene, camera);
 	}
 
-	// 6. ScrollTrigger to rotate the knot
+	// ------------------------------------------------------------------------
+	// 6. ScrollTrigger for Rotation
+	// ------------------------------------------------------------------------
 	function initScrollTrigger() {
 	  gsap.registerPlugin(ScrollTrigger);
 
@@ -156,15 +160,32 @@
 	  });
 	}
 
-	// 7. Width-only resize
+	// ------------------------------------------------------------------------
+	// 7. Width-Only Resize
+	// ------------------------------------------------------------------------
 	function onWindowResize() {
 	  const newWidth = window.innerWidth;
-
-	  // Keep the renderer's height fixed
 	  renderer.setSize(newWidth, originalHeight);
-
 	  camera.aspect = newWidth / originalHeight;
 	  camera.updateProjectionMatrix();
+	}
+
+	// ------------------------------------------------------------------------
+	// 8. In-Browser "Refresh" Function
+	// ------------------------------------------------------------------------
+	function inBrowserRefresh() {
+	  // a) Pick a new random background
+	  const newBG = getRandomHexColor();
+	  document.body.style.backgroundColor = newBG;
+
+	  // b) Pick a new random knot color
+	  const newKnotColor = getRandomHexColor();
+	  if (torusKnot) {
+		// This updates the TorusKnot’s color live
+		torusKnot.material.color.set(newKnotColor);
+	  }
+
+	  console.log("In-Browser Refresh -> BG:", newBG, "| Knot:", newKnotColor);
 	}
   </script>
 </body>
