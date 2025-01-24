@@ -36,7 +36,7 @@
 	Main content container: now 500vh, with side padding on mobile (px-4) 
 	and no padding at md+ (md:px-0).
   -->
-  <div class="min-h-[300vh] flex flex-col items-center justify-end px-4 md:px-0">
+  <div class="min-h-[500vh] flex flex-col items-center justify-end px-4 md:px-0">
 	<p class="text-xs mb-8 text-center text-gray-800 font-medium">
 	  Have a nice day
 	</p>
@@ -46,6 +46,8 @@
 	BOTTOM STICKY BAR (shown on all devices):
 	- "sticky bottom-0" pins it at the bottom
 	- Always visible
+	- Button: bigger text (text-xl) and padding (py-4) on mobile,
+	  and smaller on md+ screens.
   -->
   <div
 	class="
@@ -61,20 +63,17 @@
 	  shadow
 	"
   >
-	<!-- 
-	  Button is bigger on mobile (the default),
-	  and smaller on md+ using md: classes
-	-->
 	<button
 	  onclick="inBrowserRefresh()"
 	  class="
-		font-semibold 
-		text-gray-800 
-		px-5
-		py-3        <!-- Taller button on mobile -->
+		font-semibold
+		text-gray-800
+		text-xl     <!-- Bigger text on mobile -->
+		px-6
+		py-4       <!-- Taller button on mobile -->
 		md:py-2    <!-- Smaller on md+ -->
 		md:text-sm <!-- Smaller text on md+ -->
-		rounded 
+		rounded
 		hover:text-black
 	  "
 	>
