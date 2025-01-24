@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <!-- Make sure it's mobile-responsive -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>3D TorusKnot (Scroll-Based Color Transitions)</title>
+  <title>3D TorusKnot (Scroll-Based Color, No Easing)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -12,7 +12,6 @@
 	/*
 	  1) body.fade-in => starts with opacity-0.
 	  2) Adding .loaded => transitions to opacity-100 over ~0.7s (Tailwind).
-	  3) We also have a smooth background-color transition for the body (1s).
 	*/
 	body.fade-in {
 	  @apply opacity-0 transition-opacity duration-700 ease-in-out;
@@ -21,24 +20,25 @@
 	  @apply opacity-100;
 	}
 
-	/* Smooth background color transition if needed */
+	/* Remove background-color transition to avoid extra smoothing */
 	body {
-	  transition: background-color 1s ease;
+	  margin: 0;
+	  /* Note: no transition on background-color here */
 	}
   </style>
 </head>
 
-<body class="m-0 relative fade-in" onload="initPage()">
+<body class="relative fade-in" onload="initPage()">
   <!-- 3D pinned background (behind everything) -->
   <div
 	id="canvas-container"
 	class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"
   ></div>
 
-  <!-- Main content container -->
+  <!-- Main content container: taller than the viewport for scrolling -->
   <div class="min-h-[200vh] flex flex-col items-center justify-end px-4 md:px-0">
 	<p class="text-xs mb-8 text-center text-gray-800 font-medium">
-	  Scroll down to see background & knot color changes!<br />
+	  Scroll down to see background & knot color changes with no easing!<br />
 	  Click “Refresh” for a new set of colors.
 	</p>
   </div>
@@ -175,8 +175,9 @@
 		  trigger: document.body,
 		  start: 'top top',
 		  end: 'bottom top',
-		  scrub: 1
-		}
+		  scrub: true, // minimal smoothing
+		},
+		ease: 'none'
 	  });
 	}
 
@@ -188,13 +189,13 @@
 		{ backgroundColor: bgColor1 },
 		{
 		  backgroundColor: bgColor2,
+		  ease: 'none',  // no easing
 		  scrollTrigger: {
 			trigger: document.body,
-			start: 'top top',    // at the very top
-			end: 'bottom top',   // once we've scrolled to the bottom
-			scrub: 1            // smoothly interpolate over scroll
-		  },
-		  ease: 'none' // no easing, direct interpolation
+			start: 'top top',
+			end: 'bottom top',
+			scrub: true, // tracks scroll with minimal smoothing
+		  }
 		}
 	  );
 
@@ -207,13 +208,13 @@
 		{ r: knotStart.r, g: knotStart.g, b: knotStart.b },
 		{
 		  r: knotEnd.r, g: knotEnd.g, b: knotEnd.b,
+		  ease: 'none',
 		  scrollTrigger: {
 			trigger: document.body,
 			start: 'top top',
 			end: 'bottom top',
-			scrub: 1
+			scrub: true
 		  },
-		  ease: 'none',
 		  onUpdate: () => {
 			if (torusKnot) {
 			  torusKnot.material.color.setRGB(knotStart.r, knotStart.g, knotStart.b);
