@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Floating Refresh Button)</title>
+  <!-- Make sure it's mobile-responsive -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D TorusKnot (Scroll-Based Color Transitions)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -18,7 +20,8 @@
 	body.fade-in.loaded {
 	  @apply opacity-100;
 	}
-	/* Smooth background color transition for in-browser "refresh" */
+
+	/* Smooth background color transition if needed */
 	body {
 	  transition: background-color 1s ease;
 	}
@@ -26,45 +29,31 @@
 </head>
 
 <body class="m-0 relative fade-in" onload="initPage()">
-  <!-- 3D pinned background (z-10 behind everything) -->
+  <!-- 3D pinned background (behind everything) -->
   <div
 	id="canvas-container"
 	class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10"
   ></div>
 
-  <!-- 
-	Main content container: 500vh, with side padding on mobile (px-4) 
-	and no padding at md+ (md:px-0).
-  -->
-  <div class="min-h-[500vh] flex flex-col items-center justify-end px-4 md:px-0">
+  <!-- Main content container -->
+  <div class="min-h-[200vh] flex flex-col items-center justify-end px-4 md:px-0">
 	<p class="text-xs mb-8 text-center text-gray-800 font-medium">
-	  Have a nice day
+	  Scroll down to see background & knot color changes!<br />
+	  Click “Refresh” for a new set of colors.
 	</p>
   </div>
 
-  <!-- 
-	Floating Refresh Button (no background bar)
-	- Fixed at bottom-right
-	- Responsive scaling with simpler Tailwind classes
-  -->
-<button
+  <!-- Floating Refresh Button -->
+  <button
 	onclick="inBrowserRefresh()"
 	class="
 	  fixed
 	  bottom-4
-	  left-1/2
-	  -translate-x-1/2
+	  right-4
 	  z-50
-  
 	  px-4 py-2
-	  text-sm
-  
-	  sm:px-6 sm:py-3
-	  sm:text-base
-  
-	  md:px-8 md:py-4
-	  md:text-lg
-  
+	  md:px-6 md:py-3
+	  text-sm md:text-base
 	  font-medium
 	  text-white
 	  bg-indigo-600
@@ -79,7 +68,6 @@
 	Refresh
   </button>
 
-
   <!-- Three.js + GSAP + ScrollTrigger from CDNs -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"></script>
@@ -91,7 +79,7 @@
 	  return '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
 	}
 
-	// Convert #RRGGBB to normalized {r, g, b} in [0..1] for Three.js
+	// Convert #RRGGBB -> normalized {r, g, b} in [0..1]
 	function hexToNormalizedRGB(hex) {
 	  const c = new THREE.Color(hex);
 	  return { r: c.r, g: c.g, b: c.b };
@@ -99,23 +87,31 @@
 
 	// 2. Globals
 	let scene, camera, renderer, torusKnot;
-	let originalHeight;
 	let hasRenderedFirstFrame = false;
+
+	// We'll generate four random colors for:
+	//  - two background colors: bgColor1, bgColor2
+	//  - two knot colors: knotColor1, knotColor2
+	let bgColor1, bgColor2, knotColor1, knotColor2;
 
 	// 3. Called on body onload
 	function initPage() {
-	  // Lock initial height to avoid mobile "jump"
-	  originalHeight = window.innerHeight;
+	  gsap.registerPlugin(ScrollTrigger);
 
-	  // Initial random colors
-	  const bgColor = getRandomHexColor();
-	  const knotColor = getRandomHexColor();
+	  // 1) Create initial color pairs
+	  bgColor1   = getRandomHexColor();
+	  bgColor2   = getRandomHexColor();
+	  knotColor1 = getRandomHexColor();
+	  knotColor2 = getRandomHexColor();
 
-	  // Apply background color
-	  document.body.style.backgroundColor = bgColor;
+	  // 2) Apply initial background color
+	  document.body.style.backgroundColor = bgColor1;
 
-	  // Init Three.js with chosen knot color
-	  init3D(knotColor);
+	  // 3) Init Three.js with initial knotColor1
+	  init3D(knotColor1);
+
+	  // 4) Set up the color transitions linked to scroll
+	  initScrollColorTransitions();
 	}
 
 	// 4. Initialize Three.js Scene
@@ -124,14 +120,14 @@
 
 	  camera = new THREE.PerspectiveCamera(
 		60,
-		window.innerWidth / originalHeight, // locked height ratio
+		window.innerWidth / window.innerHeight,
 		0.1,
 		1000
 	  );
 	  camera.position.set(0, 0, 3);
 
 	  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-	  renderer.setSize(window.innerWidth, originalHeight);
+	  renderer.setSize(window.innerWidth, window.innerHeight);
 	  document.getElementById('canvas-container').appendChild(renderer.domElement);
 
 	  // Basic lighting
@@ -142,24 +138,19 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // TorusKnot geometry: radius=0.5, tube=0.235, seg=256, radSeg=64, p=2, q=3
+	  // TorusKnot geometry
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.235, 256, 64, 2, 3);
-
-	  // Lambert for bright color
-	  const material = new THREE.MeshLambertMaterial({
-		color: knotColor
-	  });
-
+	  const material = new THREE.MeshLambertMaterial({ color: knotColor });
 	  torusKnot = new THREE.Mesh(geometry, material);
 	  scene.add(torusKnot);
 
 	  // Start render loop
 	  animate();
 
-	  // Scroll-based rotation
-	  initScrollTrigger();
+	  // Add scroll-based rotation
+	  initScrollRotation();
 
-	  // Listen for width changes only
+	  // Handle resize
 	  window.addEventListener('resize', onWindowResize);
 	}
 
@@ -175,10 +166,8 @@
 	  renderer.render(scene, camera);
 	}
 
-	// 6. ScrollTrigger for rotating the knot as user scrolls
-	function initScrollTrigger() {
-	  gsap.registerPlugin(ScrollTrigger);
-
+	// 6. ScrollTrigger for rotating the knot
+	function initScrollRotation() {
 	  gsap.to(torusKnot.rotation, {
 		x: 2 * Math.PI,
 		y: 2 * Math.PI,
@@ -191,44 +180,83 @@
 	  });
 	}
 
-	// 7. Width-only resize (no vertical resize to avoid "jump" on mobile)
+	// 7. Scroll-based color transitions for background + knot
+	function initScrollColorTransitions() {
+	  // BG: from bgColor1 -> bgColor2 as you scroll from top to bottom
+	  gsap.fromTo(
+		document.body,
+		{ backgroundColor: bgColor1 },
+		{
+		  backgroundColor: bgColor2,
+		  scrollTrigger: {
+			trigger: document.body,
+			start: 'top top',    // at the very top
+			end: 'bottom top',   // once we've scrolled to the bottom
+			scrub: 1            // smoothly interpolate over scroll
+		  },
+		  ease: 'none' // no easing, direct interpolation
+		}
+	  );
+
+	  // Knot: we animate an object that holds (r, g, b) from knotColor1 -> knotColor2
+	  const knotStart = hexToNormalizedRGB(knotColor1);
+	  const knotEnd   = hexToNormalizedRGB(knotColor2);
+
+	  gsap.fromTo(
+		knotStart, // initial
+		{ r: knotStart.r, g: knotStart.g, b: knotStart.b },
+		{
+		  r: knotEnd.r, g: knotEnd.g, b: knotEnd.b,
+		  scrollTrigger: {
+			trigger: document.body,
+			start: 'top top',
+			end: 'bottom top',
+			scrub: 1
+		  },
+		  ease: 'none',
+		  onUpdate: () => {
+			if (torusKnot) {
+			  torusKnot.material.color.setRGB(knotStart.r, knotStart.g, knotStart.b);
+			}
+		  }
+		}
+	  );
+	}
+
+	// 8. Resize handler
 	function onWindowResize() {
 	  const newWidth = window.innerWidth;
-	  renderer.setSize(newWidth, originalHeight);
-	  camera.aspect = newWidth / originalHeight;
+	  const newHeight = window.innerHeight;
+	  renderer.setSize(newWidth, newHeight);
+	  camera.aspect = newWidth / newHeight;
 	  camera.updateProjectionMatrix();
 	}
 
-	// 8. In-Browser "Refresh" => smoothly change colors
+	// 9. "Refresh" => new random color pairs, re-init the scroll-based transitions
 	function inBrowserRefresh() {
-	  // a) New background color
-	  const newBGColor = getRandomHexColor();
-	  document.body.style.backgroundColor = newBGColor;
+	  // First, kill all existing ScrollTriggers
+	  ScrollTrigger.getAll().forEach(trigger => trigger.kill());
 
-	  // b) New knot color
-	  const newKnotColor = getRandomHexColor();
+	  // Generate fresh random color pairs
+	  bgColor1   = getRandomHexColor();
+	  bgColor2   = getRandomHexColor();
+	  knotColor1 = getRandomHexColor();
+	  knotColor2 = getRandomHexColor();
 
-	  // Smoothly tween the knot color via GSAP
+	  // Immediately apply new "first" colors
+	  document.body.style.backgroundColor = bgColor1;
 	  if (torusKnot) {
-		const oldRGB = {
-		  r: torusKnot.material.color.r,
-		  g: torusKnot.material.color.g,
-		  b: torusKnot.material.color.b
-		};
-		const targetRGB = hexToNormalizedRGB(newKnotColor);
-
-		gsap.to(oldRGB, {
-		  duration: 1,
-		  r: targetRGB.r,
-		  g: targetRGB.g,
-		  b: targetRGB.b,
-		  onUpdate: () => {
-			torusKnot.material.color.setRGB(oldRGB.r, oldRGB.g, oldRGB.b);
-		  }
-		});
+		torusKnot.material.color.set(new THREE.Color(knotColor1));
 	  }
 
-	  console.log("Refresh -> BG:", newBGColor, "| Knot:", newKnotColor);
+	  // Re-init the scroll-based rotation
+	  initScrollRotation();
+
+	  // Re-init the scroll-based color transitions
+	  initScrollColorTransitions();
+
+	  console.log("Refresh -> BG:", bgColor1, "| BG2:", bgColor2, 
+				  "| Knot:", knotColor1, "| Knot2:", knotColor2);
 	}
   </script>
 </body>
