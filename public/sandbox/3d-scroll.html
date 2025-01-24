@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>3D TorusKnot (Single Bottom Sticky Refresh Bar)</title>
+  <title>3D TorusKnot (Floating Refresh Button)</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
 
@@ -33,7 +33,7 @@
   ></div>
 
   <!-- 
-	Main content container: now 500vh, with side padding on mobile (px-4) 
+	Main content container: 500vh, with side padding on mobile (px-4) 
 	and no padding at md+ (md:px-0).
   -->
   <div class="min-h-[500vh] flex flex-col items-center justify-end px-4 md:px-0">
@@ -43,43 +43,42 @@
   </div>
 
   <!-- 
-	BOTTOM STICKY BAR (shown on all devices):
-	- "sticky bottom-0" pins it at the bottom
-	- Always visible
-	- Button: bigger text (text-xl) and padding (py-4) on mobile,
-	  and smaller on md+ screens.
+	Floating Refresh Button (no background bar)
+	- Fixed at bottom-right
+	- Responsive scaling with simpler Tailwind classes
   -->
-  <div
+<button
+	onclick="inBrowserRefresh()"
 	class="
-	  sticky
-	  bottom-0
-	  left-0
-	  w-full
-	  bg-white/90
-	  backdrop-blur-sm
+	  fixed
+	  bottom-4
+	  left-1/2
+	  -translate-x-1/2
 	  z-50
-	  text-center
-	  py-3
+  
+	  px-4 py-2
+	  text-sm
+  
+	  sm:px-6 sm:py-3
+	  sm:text-base
+  
+	  md:px-8 md:py-4
+	  md:text-lg
+  
+	  font-medium
+	  text-white
+	  bg-indigo-600
+	  hover:bg-indigo-700
+	  active:bg-indigo-800
+	  rounded-full
 	  shadow
+	  transition-colors
+	  duration-200
 	"
   >
-	<button
-	  onclick="inBrowserRefresh()"
-	  class="
-		font-semibold
-		text-gray-800
-		text-xl     <!-- Bigger text on mobile -->
-		px-6
-		py-4       <!-- Taller button on mobile -->
-		md:py-2    <!-- Smaller on md+ -->
-		md:text-sm <!-- Smaller text on md+ -->
-		rounded
-		hover:text-black
-	  "
-	>
-	  Refresh
-	</button>
-  </div>
+	Refresh
+  </button>
+
 
   <!-- Three.js + GSAP + ScrollTrigger from CDNs -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
@@ -143,7 +142,7 @@
 	  directionalLight.position.set(5, 5, 5);
 	  scene.add(directionalLight);
 
-	  // TorusKnot geometry: radius=0.5, tube=0.225, seg=256, radSeg=64, p=2, q=3
+	  // TorusKnot geometry: radius=0.5, tube=0.235, seg=256, radSeg=64, p=2, q=3
 	  const geometry = new THREE.TorusKnotGeometry(0.5, 0.235, 256, 64, 2, 3);
 
 	  // Lambert for bright color
