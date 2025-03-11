@@ -1,5 +1,3 @@
-// File: /Users/chrismeisner/Projects/subbers/server.js
-
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
@@ -163,7 +161,6 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 	console.log("User email from Firebase token:", userEmail);
 
 	const userRecord = await getOrCreateUserByEmail(userEmail);
-
 	const userStripeKey = userRecord.get("StripeKey");
 	if (!userStripeKey) {
 	  console.log("No StripeKey found for this user in Airtable.");
@@ -172,7 +169,6 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 
 	console.log("Using StripeKey to fetch subscribers...");
 	const stripe = new Stripe(userStripeKey);
-
 	let allSubscribers = [];
 	let hasMore = true;
 	let lastSubscriptionId = null;
@@ -187,9 +183,7 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		params.starting_after = lastSubscriptionId;
 	  }
 
-	  // Fetch ALL subscriptions (no status filter)
 	  const subscriptions = await stripe.subscriptions.list(params);
-
 	  const subscribers = subscriptions.data.map((subscription) => ({
 		id: subscription.customer.id,
 		email: subscription.customer.email || "N/A",
@@ -217,12 +211,30 @@ app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
 		lastSubscriptionId = subscriptions.data[subscriptions.data.length - 1].id;
 	  }
 	}
-
 	console.log(`Fetched ${allSubscribers.length} subscribers.`);
 	return res.json({ subscribers: allSubscribers });
   } catch (error) {
 	console.error("Error in GET /get-subscribers:", error);
 	return res.status(500).json({ error: "Unable to fetch subscribers" });
+  }
+});
+
+/**
+ * GET /get-user
+ */
+app.get("/get-user", verifyFirebaseToken, async (req, res) => {
+  console.log("GET /get-user hit.");
+  try {
+	const userEmail = req.firebaseUser.email;
+	console.log("User email from Firebase token:", userEmail);
+	const userRecord = await getOrCreateUserByEmail(userEmail);
+	const stripeKey = userRecord.get("StripeKey");
+	const userID = userRecord.get("UserID");
+	console.log("Returning user info:", { stripeKey, userID });
+	res.json({ stripeKey, userID });
+  } catch (error) {
+	console.error("Error in GET /get-user:", error);
+	res.status(500).json({ error: "Failed to fetch user info" });
   }
 });
 
@@ -237,22 +249,46 @@ app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
 	  console.log("Missing Stripe Key in request body.");
 	  return res.status(400).json({ error: "Missing Stripe Key" });
 	}
-
 	const userEmail = req.firebaseUser.email;
 	console.log("User email from Firebase token:", userEmail);
-
 	const userRecord = await getOrCreateUserByEmail(userEmail);
-
 	console.log("Saving StripeKey to Airtable...");
-	await base("Users").update(userRecord.id, {
-	  StripeKey: stripeKey,
-	});
-
+	await base("Users").update(userRecord.id, { StripeKey: stripeKey });
 	console.log("StripeKey saved successfully.");
 	return res.json({ message: "Stripe Key saved successfully" });
   } catch (error) {
 	console.error("Error in POST /save-stripe-key:", error);
 	return res.status(500).json({ error: "Unable to save Stripe Key" });
+  }
+});
+
+/**
+ * GET /stripe/callback
+ * Handles the OAuth callback from Stripe Connect.
+ * Exchanges the authorization code for an access token and updates the user's Airtable record.
+ */
+app.get("/stripe/callback", async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state) {
+	console.error("Missing code or state in Stripe OAuth callback");
+	return res.status(400).send("Missing required parameters.");
+  }
+  try {
+	const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+	const tokenResponse = await stripe.oauth.token({
+	  grant_type: 'authorization_code',
+	  code: code,
+	});
+	const stripeKey = tokenResponse.access_token;
+	console.log("Stripe OAuth token response received:", tokenResponse);
+	const userEmail = state; // In production, validate this state value securely.
+	const userRecord = await getOrCreateUserByEmail(userEmail);
+	await base("Users").update(userRecord.id, { StripeKey: stripeKey });
+	console.log(`Stripe key updated for user ${userEmail}`);
+	res.redirect("/");
+  } catch (error) {
+	console.error("Error during Stripe OAuth callback:", error);
+	res.status(500).send("Stripe OAuth failed");
   }
 });
 
@@ -271,7 +307,7 @@ if (process.env.NODE_ENV === "production") {
 /************************************************************
  * 7) START SERVER
  ************************************************************/
-const PORT = process.env.PORT || 4200;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

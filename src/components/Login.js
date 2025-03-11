@@ -1,6 +1,3 @@
-/************************************************************
- * src/components/Login.js
- ************************************************************/
 import React, { useState } from "react";
 import {
   signInWithEmailAndPassword,
@@ -18,8 +15,7 @@ function Login({ onLoginSuccess }) {
 	e.preventDefault();
 	try {
 	  const userCredential = await signInWithEmailAndPassword(auth, email, password);
-	  const user = userCredential.user;
-	  onLoginSuccess(user);
+	  onLoginSuccess(userCredential.user);
 	} catch (err) {
 	  setError(err.message);
 	  console.error("Email login error:", err);
@@ -31,8 +27,7 @@ function Login({ onLoginSuccess }) {
   async function handleGoogleLogin() {
 	try {
 	  const result = await signInWithPopup(auth, googleProvider);
-	  const user = result.user;
-	  onLoginSuccess(user);
+	  onLoginSuccess(result.user);
 	} catch (err) {
 	  setError(err.message);
 	  console.error("Google login error:", err);
@@ -40,13 +35,13 @@ function Login({ onLoginSuccess }) {
   }
 
   return (
-	<div style={{ margin: "0 auto", maxWidth: 300 }}>
-	  <h2>Login</h2>
-	  {error && <p style={{ color: "red" }}>{error}</p>}
+	<div className="max-w-sm mx-auto p-6 bg-white shadow rounded">
+	  <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
+	  {error && <p className="text-red-500 mb-4">{error}</p>}
 
-	  <form onSubmit={handleEmailLogin} style={{ marginBottom: "1.5rem" }}>
-		<div style={{ marginBottom: "1rem" }}>
-		  <label style={{ display: "block", marginBottom: "0.5rem" }}>
+	  <form onSubmit={handleEmailLogin} className="mb-6">
+		<div className="mb-4">
+		  <label className="block text-sm font-medium text-gray-700 mb-1">
 			Email:
 		  </label>
 		  <input
@@ -54,11 +49,11 @@ function Login({ onLoginSuccess }) {
 			required
 			value={email}
 			onChange={(e) => setEmail(e.target.value)}
-			style={{ width: "100%", padding: "0.5rem" }}
+			className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
 		  />
 		</div>
-		<div style={{ marginBottom: "1rem" }}>
-		  <label style={{ display: "block", marginBottom: "0.5rem" }}>
+		<div className="mb-4">
+		  <label className="block text-sm font-medium text-gray-700 mb-1">
 			Password:
 		  </label>
 		  <input
@@ -66,40 +61,22 @@ function Login({ onLoginSuccess }) {
 			required
 			value={password}
 			onChange={(e) => setPassword(e.target.value)}
-			style={{ width: "100%", padding: "0.5rem" }}
+			className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
 		  />
 		</div>
 		<button
 		  type="submit"
-		  style={{
-			width: "100%",
-			backgroundColor: "#4CAF50",
-			color: "#fff",
-			padding: "0.75rem",
-			border: "none",
-			borderRadius: "4px",
-			cursor: "pointer"
-		  }}
+		  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded"
 		>
 		  Login with Email
 		</button>
 	  </form>
 
-	  <div style={{ textAlign: "center", marginBottom: "1rem", fontWeight: "bold" }}>
-		OR
-	  </div>
+	  <div className="text-center mb-4 font-bold text-gray-700">OR</div>
 
 	  <button
 		onClick={handleGoogleLogin}
-		style={{
-		  width: "100%",
-		  backgroundColor: "#4285F4",
-		  color: "#fff",
-		  padding: "0.75rem",
-		  border: "none",
-		  borderRadius: "4px",
-		  cursor: "pointer"
-		}}
+		className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded"
 	  >
 		Login with Google
 	  </button>
