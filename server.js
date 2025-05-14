@@ -1,9 +1,15 @@
+// server.js
+
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
+const cors = require("cors");
 const admin = require("firebase-admin");
 const Airtable = require("airtable");
 const Stripe = require("stripe");
+const cron = require("node-cron");
+// If your Node version doesn’t have global fetch, uncomment the next line:
+// const fetch = require("node-fetch");
 
 /************************************************************
  * 1) FIREBASE ADMIN SETUP
@@ -23,8 +29,6 @@ const serviceAccount = {
   auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
   client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
 };
-console.log("Firebase Admin credentials loaded.");
-
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -43,271 +47,311 @@ console.log("Airtable setup complete.");
  * 3) EXPRESS APP SETUP
  ************************************************************/
 const app = express();
+app.use(
+  cors({
+	origin: "http://localhost:3000",
+	credentials: true,
+  })
+);
 app.use(express.json());
 
-// Middleware to verify the Firebase token
+// Middleware to verify Firebase ID token
 async function verifyFirebaseToken(req, res, next) {
-  console.log("Verifying Firebase token...");
   const authHeader = req.headers.authorization || "";
-  const token = authHeader.replace("Bearer ", "");
-  if (!token) {
-	console.log("No Firebase token found in request headers.");
+  const idToken = authHeader.replace("Bearer ", "");
+  if (!idToken) {
 	return res.status(401).json({ error: "Unauthorized" });
   }
   try {
-	const decoded = await admin.auth().verifyIdToken(token);
-	console.log("Firebase token verified successfully:", {
-	  uid: decoded.uid,
-	  email: decoded.email,
-	});
+	const decoded = await admin.auth().verifyIdToken(idToken);
 	req.firebaseUser = decoded;
 	next();
   } catch (err) {
-	console.error("Error verifying Firebase token:", err);
+	console.error("Firebase auth error:", err);
 	return res.status(401).json({ error: "Unauthorized" });
   }
 }
 
 /************************************************************
- * 4) HELPERS: GET/CREATE USER + FETCH EVENTS
+ * 4) HELPER: CALCULATE NEXT OCCURRENCE
+ ************************************************************/
+function calculateNextOccurrence(
+  startDate,
+  recurrenceType,
+  interval,
+  recurrenceEnd,
+  timeZone
+) {
+  let next = new Date(startDate);
+  const now = new Date();
+
+  if (recurrenceType === "weekly") {
+	while (next <= now) {
+	  next.setDate(next.getDate() + 7 * interval);
+	}
+  }
+
+  if (recurrenceEnd && next > new Date(recurrenceEnd)) {
+	return null;
+  }
+  return next.toISOString();
+}
+
+/************************************************************
+ * 5) HELPER: GET OR CREATE USER
  ************************************************************/
 async function getOrCreateUserByEmail(email) {
-  console.log(`Fetching or creating user by email: ${email}`);
-  const tableName = "Users";
-
-  try {
-	console.log(`Looking up user in Airtable table "${tableName}" by email...`);
-	const records = await base(tableName)
-	  .select({ filterByFormula: `{Email} = "${email}"`, maxRecords: 1 })
-	  .firstPage();
-
-	if (records.length > 0) {
-	  console.log("Found existing user in Airtable:", records[0].id);
-	  return records[0];
-	}
-
-	console.log("No user found. Creating new user in Airtable...");
-	const newRecord = await base(tableName).create([{ fields: { Email: email } }]);
-	console.log("New user created successfully:", newRecord[0].id);
-	return newRecord[0];
-  } catch (error) {
-	console.error("Error interacting with Airtable (Users table):", error);
-	throw new Error("Airtable interaction failed");
-  }
+  const table = base("Users");
+  const [record] = await table
+	.select({ filterByFormula: `{Email} = "${email}"`, maxRecords: 1 })
+	.firstPage();
+  if (record) return record;
+  const [newRec] = await table.create([{ fields: { Email: email } }]);
+  return newRec;
 }
 
 async function getEventsForUser(userRecord) {
   const userID = userRecord.get("UserID");
-  console.log(`Fetching events for user with UserID: ${userID}`);
-
-  if (!userID) {
-	console.log("No UserID found in user record. Returning empty events array.");
-	return [];
-  }
-
-  const tableName = "Events";
-
-  try {
-	console.log(`Fetching events from Airtable table "${tableName}"...`);
-	const records = await base(tableName)
-	  .select({ filterByFormula: `{UserID} = "${userID}"` })
-	  .firstPage();
-
-	console.log(`Fetched ${records.length} events for UserID: ${userID}`);
-	return records.map((rec) => ({
+  if (!userID) return [];
+  const records = await base("Events")
+	.select({ filterByFormula: `{UserID} = "${userID}"` })
+	.firstPage();
+  return records.map((rec) => {
+	const startDate = rec.get("StartDate") || "";
+	const type = rec.get("recurrenceType") || "";
+	const interval = rec.get("interval") || 0;
+	const end = rec.get("recurrenceEnd") || "";
+	let next = rec.get("nextOccurrence") || "";
+	if (type && interval) {
+	  next = calculateNextOccurrence(startDate, type, interval, end, rec.get("timeZone"));
+	}
+	return {
 	  id: rec.id,
-	  EventID: rec.get("EventID") || "",
-	  UserID: rec.get("UserID") || "",
-	  StartDate: rec.get("StartDate") || "",
-	  Cadence: rec.get("Cadence") || "",
-	}));
-  } catch (error) {
-	console.error("Error interacting with Airtable (Events table):", error);
-	throw new Error("Airtable interaction failed");
-  }
-}
-
-/************************************************************
- * 5) ROUTES
- ************************************************************/
-
-/**
- * GET /get-events
- */
-app.get("/get-events", verifyFirebaseToken, async (req, res) => {
-  console.log("GET /get-events hit.");
-  try {
-	const userEmail = req.firebaseUser.email;
-	console.log("User email from Firebase token:", userEmail);
-
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	const events = await getEventsForUser(userRecord);
-
-	console.log(`Returning ${events.length} events.`);
-	return res.json({ events });
-  } catch (error) {
-	console.error("Error in GET /get-events:", error);
-	return res.status(500).json({ error: "Unable to fetch events" });
-  }
-});
-
-/**
- * GET /get-subscribers
- */
-app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
-  console.log("GET /get-subscribers hit.");
-  try {
-	const userEmail = req.firebaseUser.email;
-	console.log("User email from Firebase token:", userEmail);
-
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	const userStripeKey = userRecord.get("StripeKey");
-	if (!userStripeKey) {
-	  console.log("No StripeKey found for this user in Airtable.");
-	  return res.status(400).json({ error: "No StripeKey in Airtable record" });
-	}
-
-	console.log("Using StripeKey to fetch subscribers...");
-	const stripe = new Stripe(userStripeKey);
-	let allSubscribers = [];
-	let hasMore = true;
-	let lastSubscriptionId = null;
-
-	while (hasMore) {
-	  console.log("Fetching subscribers batch...");
-	  const params = {
-		limit: 100,
-		expand: ["data.customer", "data.discount", "data.plan.product"],
-	  };
-	  if (lastSubscriptionId) {
-		params.starting_after = lastSubscriptionId;
-	  }
-
-	  const subscriptions = await stripe.subscriptions.list(params);
-	  const subscribers = subscriptions.data.map((subscription) => ({
-		id: subscription.customer.id,
-		email: subscription.customer.email || "N/A",
-		name: subscription.customer.name || "N/A",
-		phone: subscription.customer.phone || "N/A",
-		subscription_status: subscription.status,
-		plan_name: subscription.plan.nickname || "N/A",
-		product_name: subscription.plan.product.name || "N/A",
-		amount_charged: (subscription.plan.amount / 100).toFixed(2),
-		currency: subscription.plan.currency.toUpperCase(),
-		current_period_end: new Date(subscription.current_period_end * 1000).toLocaleDateString(),
-		trial_end: subscription.trial_end
-		  ? new Date(subscription.trial_end * 1000).toLocaleDateString()
-		  : "N/A",
-		subscription_start: new Date(subscription.start_date * 1000).toLocaleDateString(),
-		billing_interval: subscription.plan.interval,
-		discount: subscription.discount
-		  ? `${subscription.discount.coupon.percent_off}% off`
-		  : "None",
-	  }));
-
-	  allSubscribers = [...allSubscribers, ...subscribers];
-	  hasMore = subscriptions.has_more;
-	  if (hasMore) {
-		lastSubscriptionId = subscriptions.data[subscriptions.data.length - 1].id;
-	  }
-	}
-	console.log(`Fetched ${allSubscribers.length} subscribers.`);
-	return res.json({ subscribers: allSubscribers });
-  } catch (error) {
-	console.error("Error in GET /get-subscribers:", error);
-	return res.status(500).json({ error: "Unable to fetch subscribers" });
-  }
-});
-
-/**
- * GET /get-user
- */
-app.get("/get-user", verifyFirebaseToken, async (req, res) => {
-  console.log("GET /get-user hit.");
-  try {
-	const userEmail = req.firebaseUser.email;
-	console.log("User email from Firebase token:", userEmail);
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	const stripeKey = userRecord.get("StripeKey");
-	const userID = userRecord.get("UserID");
-	console.log("Returning user info:", { stripeKey, userID });
-	res.json({ stripeKey, userID });
-  } catch (error) {
-	console.error("Error in GET /get-user:", error);
-	res.status(500).json({ error: "Failed to fetch user info" });
-  }
-});
-
-/**
- * POST /save-stripe-key
- */
-app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
-  console.log("POST /save-stripe-key hit.");
-  try {
-	const { stripeKey } = req.body;
-	if (!stripeKey) {
-	  console.log("Missing Stripe Key in request body.");
-	  return res.status(400).json({ error: "Missing Stripe Key" });
-	}
-	const userEmail = req.firebaseUser.email;
-	console.log("User email from Firebase token:", userEmail);
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	console.log("Saving StripeKey to Airtable...");
-	await base("Users").update(userRecord.id, { StripeKey: stripeKey });
-	console.log("StripeKey saved successfully.");
-	return res.json({ message: "Stripe Key saved successfully" });
-  } catch (error) {
-	console.error("Error in POST /save-stripe-key:", error);
-	return res.status(500).json({ error: "Unable to save Stripe Key" });
-  }
-});
-
-/**
- * GET /stripe/callback
- * Handles the OAuth callback from Stripe Connect.
- * Exchanges the authorization code for an access token and updates the user's Airtable record.
- */
-app.get("/stripe/callback", async (req, res) => {
-  const { code, state } = req.query;
-  if (!code || !state) {
-	console.error("Missing code or state in Stripe OAuth callback");
-	return res.status(400).send("Missing required parameters.");
-  }
-  try {
-	const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-	const tokenResponse = await stripe.oauth.token({
-	  grant_type: 'authorization_code',
-	  code: code,
-	});
-	const stripeKey = tokenResponse.access_token;
-	console.log("Stripe OAuth token response received:", tokenResponse);
-	const userEmail = state; // In production, validate this state value securely.
-	const userRecord = await getOrCreateUserByEmail(userEmail);
-	await base("Users").update(userRecord.id, { StripeKey: stripeKey });
-	console.log(`Stripe key updated for user ${userEmail}`);
-	res.redirect("/");
-  } catch (error) {
-	console.error("Error during Stripe OAuth callback:", error);
-	res.status(500).send("Stripe OAuth failed");
-  }
-});
-
-/************************************************************
- * 6) SERVE REACT BUILD IN PRODUCTION
- ************************************************************/
-if (process.env.NODE_ENV === "production") {
-  console.log("Serving static files from build directory...");
-  app.use(express.static(path.join(__dirname, "build")));
-  app.get("*", (req, res) => {
-	console.log("Serving index.html for:", req.url);
-	res.sendFile(path.join(__dirname, "build", "index.html"));
+	  eventTitle: rec.get("eventTitle") || rec.get("EventID") || "Untitled Event",
+	  StartDate: startDate,
+	  recurrenceType: type,
+	  interval,
+	  recurrenceEnd: end,
+	  timeZone: rec.get("timeZone") || "UTC",
+	  nextOccurrence: next,
+	  product: rec.get("product") || "",
+	  emailSubject: rec.get("emailSubject") || "",
+	  emailMessage: rec.get("emailMessage") || "",
+	  reminderOffset: rec.get("reminderOffset") || 60,
+	  reminderEnabled: rec.get("reminderEnabled") || false,
+	  lastReminderSent: rec.get("lastReminderSent") || "",
+	};
   });
 }
 
 /************************************************************
- * 7) START SERVER
+ * 6) ROUTES
  ************************************************************/
-const PORT = process.env.PORT || 3000;
+
+// GET /get-events
+app.get("/get-events", verifyFirebaseToken, async (req, res) => {
+  try {
+	const userRec = await getOrCreateUserByEmail(req.firebaseUser.email);
+	const events = await getEventsForUser(userRec);
+	res.json({ events });
+  } catch (err) {
+	console.error("GET /get-events error:", err);
+	res.status(500).json({ error: "Unable to fetch events" });
+  }
+});
+
+// POST /update-event-product
+app.post("/update-event-product", verifyFirebaseToken, async (req, res) => {
+  try {
+	const { eventId, product } = req.body;
+	if (!eventId || !product) {
+	  return res.status(400).json({ error: "Missing eventId or product" });
+	}
+	await base("Events").update(eventId, { product });
+	res.json({ message: "Event product updated successfully" });
+  } catch (err) {
+	console.error("POST /update-event-product error:", err);
+	res.status(500).json({ error: "Failed to update event product" });
+  }
+});
+
+// GET /get-subscribers
+app.get("/get-subscribers", verifyFirebaseToken, async (req, res) => {
+  try {
+	const userRec = await getOrCreateUserByEmail(req.firebaseUser.email);
+	const key = userRec.get("StripeKey");
+	if (!key) return res.status(400).json({ error: "No StripeKey found" });
+
+	const stripe = new Stripe(key);
+	let subscribers = [];
+	let hasMore = true;
+	let lastId = null;
+
+	while (hasMore) {
+	  const params = { limit: 100, expand: ["data.customer", "data.plan.product", "data.discount"] };
+	  if (lastId) params.starting_after = lastId;
+	  const list = await stripe.subscriptions.list(params);
+	  const mapped = list.data.map((sub) => ({
+		id: sub.customer.id,
+		email: sub.customer.email || "N/A",
+		name: sub.customer.name || "N/A",
+		phone: sub.customer.phone || "N/A",
+		subscription_status: sub.status,
+		plan_name: sub.plan.nickname || "N/A",
+		product_name: sub.plan.product.name || "N/A",
+		amount_charged: (sub.plan.amount / 100).toFixed(2),
+		currency: sub.plan.currency.toUpperCase(),
+		current_period_end: new Date(sub.current_period_end * 1000).toLocaleDateString(),
+		trial_end: sub.trial_end
+		  ? new Date(sub.trial_end * 1000).toLocaleDateString()
+		  : "N/A",
+		subscription_start: new Date(sub.start_date * 1000).toLocaleDateString(),
+		billing_interval: sub.plan.interval,
+		discount: sub.discount ? `${sub.discount.coupon.percent_off}% off` : "None",
+	  }));
+	  subscribers.push(...mapped);
+	  hasMore = list.has_more;
+	  lastId = hasMore ? list.data.slice(-1)[0].id : null;
+	}
+
+	res.json({ subscribers });
+  } catch (err) {
+	console.error("GET /get-subscribers error:", err);
+	res.status(500).json({ error: "Unable to fetch subscribers" });
+  }
+});
+
+// GET /get-user
+app.get("/get-user", verifyFirebaseToken, async (req, res) => {
+  try {
+	const userRec = await getOrCreateUserByEmail(req.firebaseUser.email);
+	res.json({
+	  stripeKey: userRec.get("StripeKey") || "",
+	  userID: userRec.get("UserID") || "",
+	  zoomConnected: Boolean(userRec.get("ZoomAccessToken")),
+	});
+  } catch (err) {
+	console.error("GET /get-user error:", err);
+	res.status(500).json({ error: "Failed to fetch user info" });
+  }
+});
+
+// POST /save-stripe-key
+app.post("/save-stripe-key", verifyFirebaseToken, async (req, res) => {
+  try {
+	const { stripeKey } = req.body;
+	if (!stripeKey) return res.status(400).json({ error: "Missing StripeKey" });
+	const userRec = await getOrCreateUserByEmail(req.firebaseUser.email);
+	await base("Users").update(userRec.id, { StripeKey: stripeKey });
+	res.json({ message: "Stripe Key saved" });
+  } catch (err) {
+	console.error("POST /save-stripe-key error:", err);
+	res.status(500).json({ error: "Unable to save StripeKey" });
+  }
+});
+
+// GET /stripe/callback
+app.get("/stripe/callback", async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state) return res.status(400).send("Missing parameters");
+  try {
+	const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+	const { access_token } = await stripe.oauth.token({ grant_type: "authorization_code", code });
+	const userRec = await getOrCreateUserByEmail(state);
+	await base("Users").update(userRec.id, { StripeKey: access_token });
+	res.redirect("/dashboard");
+  } catch (err) {
+	console.error("Stripe OAuth error:", err);
+	res.status(500).send("Stripe OAuth failed");
+  }
+});
+
+
+// ─── NEW ZOOM OAUTH ROUTES ───────────────────────────────────────────────────────
+
+// GET /zoom/oauth-url
+app.get("/zoom/oauth-url", verifyFirebaseToken, (req, res) => {
+  const params = new URLSearchParams({
+	response_type: "code",
+	client_id: process.env.ZOOM_CLIENT_ID,
+	redirect_uri: process.env.ZOOM_REDIRECT_URI,
+	state: req.firebaseUser.email,
+  });
+  res.json({ url: `https://zoom.us/oauth/authorize?${params}` });
+});
+
+// GET /zoom/callback
+app.get("/zoom/callback", async (req, res) => {
+  const { code, state: userEmail } = req.query;
+  if (!code) return res.status(400).send("Missing Zoom auth code");
+
+  try {
+	const tokenRes = await fetch(
+	  `https://zoom.us/oauth/token?grant_type=authorization_code` +
+		`&code=${code}` +
+		`&redirect_uri=${encodeURIComponent(process.env.ZOOM_REDIRECT_URI)}`,
+	  {
+		method: "POST",
+		headers: {
+		  Authorization:
+			"Basic " +
+			Buffer.from(
+			  `${process.env.ZOOM_CLIENT_ID}:${process.env.ZOOM_CLIENT_SECRET}`
+			).toString("base64"),
+		},
+	  }
+	);
+	const { access_token, refresh_token } = await tokenRes.json();
+
+	// persist in Airtable
+	const userRec = await getOrCreateUserByEmail(userEmail);
+	await base("Users").update(userRec.id, {
+	  ZoomAccessToken: access_token,
+	  ZoomRefreshToken: refresh_token,
+	});
+
+	res.redirect("/dashboard");
+  } catch (err) {
+	console.error("Zoom OAuth callback error:", err);
+	res.status(500).send("Zoom OAuth failed");
+  }
+});
+
+
+/************************************************************
+ * 7) REMINDER CRON JOB
+ ************************************************************/
+cron.schedule("* * * * *", async () => {
+  try {
+	const now = new Date();
+	const recs = await base("Events")
+	  .select({ filterByFormula: "reminderEnabled" })
+	  .firstPage();
+
+	for (let rec of recs) {
+	  const start = rec.get("StartDate");
+	  const offset = rec.get("reminderOffset") || 60;
+	  const last = rec.get("lastReminderSent");
+	  const remindAt = new Date(new Date(start).getTime() - offset * 60000);
+
+	  if (now >= remindAt && (!last || new Date(last) < remindAt)) {
+		await base("Events").update(rec.id, { lastReminderSent: now.toISOString() });
+	  }
+	}
+  } catch (err) {
+	console.error("Cron job error:", err);
+  }
+});
+
+/************************************************************
+ * 8) SERVE REACT BUILD & START SERVER
+ ************************************************************/
+app.use(express.static(path.join(__dirname, "build")));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "build", "index.html"));
+});
+
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
